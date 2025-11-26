@@ -306,11 +306,10 @@
     /* Joystick */
     #joystick-wrapper {
       position: absolute;
-      left: 16px;
-      top: 50%;
-      transform: translateY(-50%);
-      width: 130px;
-      height: 130px;
+      right: 18px;
+      bottom: 128px;
+      width: 140px;
+      height: 140px;
       pointer-events: none;
       touch-action: none;
     }
@@ -319,8 +318,8 @@
       position: absolute;
       inset: 0;
       margin: auto;
-      width: 110px;
-      height: 110px;
+      width: 120px;
+      height: 120px;
       border-radius: 50%;
       border: 1px solid rgba(148, 163, 184, 0.9);
       background: radial-gradient(circle at center, rgba(15, 23, 42, 0.98), rgba(15, 23, 42, 0.85));
@@ -332,8 +331,8 @@
       position: absolute;
       left: 50%;
       top: 50%;
-      width: 50px;
-      height: 50px;
+      width: 54px;
+      height: 54px;
       border-radius: 50%;
       transform: translate(-50%, -50%);
       background: radial-gradient(circle at top, #38bdf8, #0f172a);
@@ -345,10 +344,10 @@
     /* Jump button (mobile) */
     #btn-jump {
       position: absolute;
-      right: 18px;
+      right: 22px;
       bottom: 26px;
-      width: 64px;
-      height: 64px;
+      width: 74px;
+      height: 74px;
       border-radius: 50%;
       border: 1px solid rgba(148, 163, 184, 0.9);
       background: radial-gradient(circle at top, #22c55e, #14532d);
@@ -366,6 +365,20 @@
     #btn-jump:active {
       transform: translateY(2px) scale(0.97);
       box-shadow: 0 6px 16px rgba(34, 197, 94, 0.8);
+    }
+
+    #jump-overlay {
+      position: absolute;
+      left: 12px;
+      bottom: 12px;
+      width: 38%;
+      height: 46%;
+      pointer-events: auto;
+      touch-action: none;
+      background: radial-gradient(circle at top left, rgba(56, 189, 248, 0.09), transparent 65%);
+      border: 1px dashed rgba(148, 163, 184, 0.35);
+      border-radius: 18px;
+      box-shadow: inset 0 0 25px rgba(0, 0, 0, 0.35);
     }
 
     @media (max-width: 768px) {
@@ -425,7 +438,7 @@
     <!-- Hint -->
     <div id="hint">
       PC: WASD / ok tuşları, fareyi sürükleyerek etrafına bak · Space: zıpla (engelleri aş)<br/>
-      Mobil: sol ortadaki joystick + sağ alttaki zıplama butonu. Level-up olduğunda upgrade seç.
+      Mobil: sağ taraftaki joystick + zıplama butonu ya da sol alt şeffaf alana dokunarak aynı anda hareket/ zıplama.
     </div>
 
     <!-- Start screen -->
@@ -482,6 +495,9 @@
       </div>
     </div>
 
+    <!-- Touch helpers -->
+    <div id="jump-overlay" aria-hidden="true"></div>
+
     <!-- Mobile joystick -->
     <div id="joystick-wrapper">
       <div id="joystick-base">
@@ -522,11 +538,22 @@
     let windTime = 0;
 
     // Işık ve gökyüzü
-    let ambientLight, sunLight, backLight, starMaterial;
-    let dayColor, nightColor;
+    let ambientLight, sunLight, backLight, skyDome, starMaterial;
+    let dayColor, nightColor, duskColor;
     let sunMesh, moonMesh;
     let groundMaterial = null;
     let waterMaterial = null;
+    let grassInstanced = null;
+    let grassOffsets = [];
+    let grassData = [];
+    let pebbleInstanced = null;
+    let weatherParticles = null;
+    let weatherVelocities = null;
+    let weatherMaterial = null;
+    let weather = { type: "clear", timer: 25, intensity: 0 };
+    let lastLightMix = 1;
+
+    const dummy = new THREE.Object3D();
 
     // Perlin
     const Perlin = (() => {
@@ -613,7 +640,8 @@
       damageReduction: 0,
       weapons: ["blaster"],
       bulletScale: 1,
-      bonusFireRate: 0
+      bonusFireRate: 0,
+      onKillHeal: 0
     };
 
     const enemies = [];
@@ -643,11 +671,18 @@
     let soundEnabled = true;
 
     function initAudio() {
-      if (!soundEnabled || audioCtx) return;
+      if (!soundEnabled) return;
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;
-      audioCtx = new AC();
-      if (audioCtx.resume) audioCtx.resume();
+      if (!audioCtx) audioCtx = new AC();
+      if (audioCtx.state === "suspended" && audioCtx.resume) audioCtx.resume();
+
+      // iOS/Android tarayıcıları için sessiz tetikleyici
+      const silentBuffer = audioCtx.createBuffer(1, 1, audioCtx.sampleRate);
+      const node = audioCtx.createBufferSource();
+      node.buffer = silentBuffer;
+      node.connect(audioCtx.destination);
+      node.start();
     }
 
     // Daha yumuşak, daha az rahatsız edici sesler
@@ -716,6 +751,7 @@
     const btnRestart = document.getElementById("btn-restart");
     const btnQuit = document.getElementById("btn-quit");
     const btnJump = document.getElementById("btn-jump");
+    const jumpOverlay = document.getElementById("jump-overlay");
 
     const statTime = document.getElementById("stat-time");
     const statKills = document.getElementById("stat-kills");
@@ -879,11 +915,37 @@
         }
       },
       {
+        id: "weapon_mortar",
+        name: "Seismic Mortar",
+        tag: "Weapon",
+        desc: "Yayvan patlayan havan atışı eklenir, kalabalıkları dağıtır.",
+        apply() {
+          if (!player.weapons.includes("mortar")) player.weapons.push("mortar");
+          player.pierce = Math.max(player.pierce, 1);
+        }
+      },
+      {
+        id: "weapon_cryo",
+        name: "Cryo Lance",
+        tag: "Weapon",
+        desc: "Düşmanları yavaşlatan buz ışınları açılır, hareketi net gösterir.",
+        apply() {
+          if (!player.weapons.includes("cryo")) player.weapons.push("cryo");
+        }
+      },
+      {
         id: "deflect",
         name: "Bulwark Plating",
         tag: "Defense",
         desc: "Max HP +60, gelen hasar %15 azalır.",
         apply() { player.maxHp += 60; player.hp += 30; player.damageReduction = (player.damageReduction || 0) + 0.15; }
+      },
+      {
+        id: "surge_heal",
+        name: "Adrenaline Loop",
+        tag: "Utility",
+        desc: "Her kill sonrasında +4 HP, ayrıca fire rate %10 artar.",
+        apply() { player.onKillHeal = (player.onKillHeal || 0) + 4; player.fireRate *= 1.1; }
       },
       {
         id: "overcharge",
@@ -995,6 +1057,7 @@
       scene.fog = new THREE.FogExp2(0x020617, 0.010); // daha az yoğun fog
       
       dayColor = new THREE.Color(0x87ceeb);  // açık gökyüzü
+      duskColor = new THREE.Color(0x172554);
       nightColor = new THREE.Color(0x020617);
 
 
@@ -1034,6 +1097,9 @@
       backLight.position.set(-80, 40, -60);
       scene.add(backLight);
 
+      createSkyDome();
+      initWeatherSystem();
+
       createTerrain();
       createObstacles();
       createStarField();
@@ -1061,6 +1127,63 @@
       window.addEventListener("pointercancel", () => { isDraggingCam = false; });
 
       window.addEventListener("resize", onWindowResize);
+    }
+
+    function createSkyDome() {
+      const skyGeo = new THREE.SphereGeometry(520, 32, 32);
+      const pos = skyGeo.attributes.position;
+      const colors = new Float32Array(pos.count * 3);
+      const baseBottom = new THREE.Color(0x0b1224);
+      const baseTop = new THREE.Color(0x1e3a8a);
+
+      for (let i = 0; i < pos.count; i++) {
+        const y = pos.getY(i);
+        const h = clamp((y / 520 + 1) * 0.5, 0, 1);
+        const c = baseBottom.clone().lerp(baseTop, Math.pow(h, 0.7));
+        colors[i * 3 + 0] = c.r;
+        colors[i * 3 + 1] = c.g;
+        colors[i * 3 + 2] = c.b;
+      }
+
+      skyGeo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+      const skyMat = new THREE.MeshBasicMaterial({
+        vertexColors: true,
+        side: THREE.BackSide,
+        depthWrite: false,
+      });
+
+      skyDome = new THREE.Mesh(skyGeo, skyMat);
+      skyDome.position.y = -20;
+      scene.add(skyDome);
+    }
+
+    function initWeatherSystem() {
+      const particleCount = 700;
+      const positions = new Float32Array(particleCount * 3);
+      weatherVelocities = new Float32Array(particleCount);
+
+      for (let i = 0; i < particleCount; i++) {
+        positions[i * 3 + 0] = (Math.random() - 0.5) * 260;
+        positions[i * 3 + 1] = Math.random() * 120 + 20;
+        positions[i * 3 + 2] = (Math.random() - 0.5) * 260;
+        weatherVelocities[i] = 0;
+      }
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+
+      weatherMaterial = new THREE.PointsMaterial({
+        color: 0x93c5fd,
+        size: 0.8,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      });
+
+      weatherParticles = new THREE.Points(geo, weatherMaterial);
+      weatherParticles.frustumCulled = false;
+      scene.add(weatherParticles);
     }
 
     function createTerrain() {
@@ -1179,6 +1302,83 @@
       water.position.y = WATER_LEVEL;
       water.receiveShadow = false;
       scene.add(water);
+
+      scatterGrass();
+      scatterPebbles();
+    }
+
+    function scatterGrass() {
+      const count = 1200;
+      const geo = new THREE.ConeGeometry(0.16, 0.9, 6);
+      geo.translate(0, 0.45, 0);
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0x22c55e,
+        emissive: 0x15803d,
+        emissiveIntensity: 0.35,
+        roughness: 0.9,
+        metalness: 0.05,
+        flatShading: true,
+      });
+
+      grassInstanced = new THREE.InstancedMesh(geo, mat, count);
+      grassOffsets = new Array(count);
+      grassData = new Array(count);
+
+      for (let i = 0; i < count; i++) {
+        const x = (Math.random() - 0.5) * (WORLD_SIZE - 30);
+        const z = (Math.random() - 0.5) * (WORLD_SIZE - 30);
+        const y = terrainHeight(x, z) + 0.05;
+
+        if (y < WATER_LEVEL + 0.4) { i--; continue; }
+        if (Math.hypot(x, z) < 8) { i--; continue; }
+
+        const s = 0.6 + Math.random() * 0.8;
+        const rot = Math.random() * Math.PI * 2;
+        dummy.position.set(x, y, z);
+        dummy.rotation.set(-0.12, rot, 0);
+        dummy.scale.setScalar(s);
+        dummy.updateMatrix();
+        grassInstanced.setMatrixAt(i, dummy.matrix);
+
+        grassOffsets[i] = Math.random() * Math.PI * 2;
+        grassData[i] = { x, y, z, scale: s, rot };
+      }
+
+      grassInstanced.instanceMatrix.needsUpdate = true;
+      grassInstanced.castShadow = false;
+      grassInstanced.receiveShadow = true;
+      scene.add(grassInstanced);
+    }
+
+    function scatterPebbles() {
+      const count = 240;
+      const geo = new THREE.DodecahedronGeometry(0.5, 0);
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0x9ca3af,
+        roughness: 0.85,
+        metalness: 0.1,
+        flatShading: true,
+      });
+      pebbleInstanced = new THREE.InstancedMesh(geo, mat, count);
+
+      for (let i = 0; i < count; i++) {
+        const x = (Math.random() - 0.5) * (WORLD_SIZE - 20);
+        const z = (Math.random() - 0.5) * (WORLD_SIZE - 20);
+        const y = terrainHeight(x, z) + 0.25;
+        if (y < WATER_LEVEL + 0.5) { i--; continue; }
+
+        const s = 0.6 + Math.random() * 0.6;
+        dummy.position.set(x, y, z);
+        dummy.rotation.set(Math.random() * 0.4, Math.random() * Math.PI * 2, Math.random() * 0.4);
+        dummy.scale.setScalar(s);
+        dummy.updateMatrix();
+        pebbleInstanced.setMatrixAt(i, dummy.matrix);
+      }
+
+      pebbleInstanced.castShadow = true;
+      pebbleInstanced.receiveShadow = true;
+      pebbleInstanced.instanceMatrix.needsUpdate = true;
+      scene.add(pebbleInstanced);
     }
 
 
@@ -1633,6 +1833,7 @@
       player.weapons = ["blaster"];
       player.bulletScale = 1;
       player.bonusFireRate = 0;
+      player.onKillHeal = 0;
 
       const groundY = terrainHeight(player.x, player.z);
       player.y = groundY + 2.2;
@@ -1719,7 +1920,9 @@
         mesh,
         fireCooldown: 1.5 + Math.random(),
         hopTimer: 0,
-        hitFlash: 0
+        hitFlash: 0,
+        slowTimer: 0,
+        slowFactor: 1
       });
     }
 
@@ -1761,7 +1964,10 @@
         fromPlayer,
         remainingPierce: pierceCount,
         damageScale: style.damageScale || 1,
-        homing: style.homing || false
+        homing: style.homing || false,
+        splashRadius: style.splashRadius,
+        slowAmount: style.slowAmount,
+        slowDuration: style.slowDuration
       });
 
       if (fromPlayer) sShoot();
@@ -1826,6 +2032,9 @@
       scene.remove(e.mesh);
       enemies.splice(index, 1);
       killCount++;
+      if (player.onKillHeal) {
+        player.hp = Math.min(player.maxHp, player.hp + player.onKillHeal);
+      }
     }
 
     // PLAYER
@@ -1966,13 +2175,17 @@
           e.mesh.scale.set(1, 1, 1);
         }
 
+        e.slowTimer = Math.max(0, e.slowTimer - dt);
+        const slowMul = e.slowTimer > 0 ? clamp(e.slowFactor, 0.35, 1) : 1;
+        if (e.slowTimer <= 0) e.slowFactor = 1;
+
         const dx = player.x - e.x;
         const dz = player.z - e.z;
         const dist = Math.hypot(dx, dz) || 1;
         let dir = normalize2(dx, dz);
 
-        let vx = dir.x * e.speed;
-        let vz = dir.z * e.speed;
+        let vx = dir.x * e.speed * slowMul;
+        let vz = dir.z * e.speed * slowMul;
 
         if (e.type === 0) {
           const side = normalize2(-dir.z, dir.x);
@@ -2089,6 +2302,22 @@
               }
               e.hp -= dmg;
               e.hitFlash = 0.16;
+              if (b.splashRadius) {
+                for (let k = enemies.length - 1; k >= 0; k--) {
+                  if (k === j) continue;
+                  const o = enemies[k];
+                  const d2 = Math.hypot(o.x - b.x, o.z - b.z);
+                  if (d2 < b.splashRadius) {
+                    o.hp -= dmg * 0.55;
+                    o.hitFlash = 0.12;
+                    if (o.hp <= 0) killEnemy(k);
+                  }
+                }
+              }
+              if (b.slowAmount) {
+                e.slowTimer = Math.max(e.slowTimer || 0, b.slowDuration || 1.4);
+                e.slowFactor = Math.min(e.slowFactor, 1 - b.slowAmount);
+              }
               cameraShake = Math.min(cameraShake + 0.06, 0.25);
               sHit();
               if (player.pierce > 0 && b.remainingPierce > 0) {
@@ -2221,6 +2450,33 @@
         return;
       }
 
+      if (type === "mortar") {
+        spawnBullet(dirX, dirZ, true, null, player.bulletSpeed * 0.7, 0, {
+          life: 1.8,
+          color: 0xf97316,
+          emissive: 0xf97316,
+          emissiveIntensity: 1.1,
+          hitRadius: 0.55,
+          damageScale: 1.35,
+          splashRadius: 3.6
+        });
+        return;
+      }
+
+      if (type === "cryo") {
+        spawnBullet(dirX, dirZ, true, null, player.bulletSpeed * 1.05, 0, {
+          life: 2.2,
+          color: 0x38bdf8,
+          emissive: 0x0ea5e9,
+          emissiveIntensity: 1.6,
+          hitRadius: 0.3,
+          damageScale: 0.9,
+          slowAmount: 0.4,
+          slowDuration: 2.2
+        });
+        return;
+      }
+
       // Default blaster
       const shots = player.multiShot || 1;
       const baseSpread = (shots > 1) ? 0.22 : 0;
@@ -2280,14 +2536,20 @@
       sunLight.position.set(sunX * 80, sunY * 80 + 60, 30);
 
       const lightStrength = clamp(sunY * 0.8 + 0.2, 0.05, 1.2);
-      ambientLight.intensity = 0.4 + lightStrength * 0.7;
+      ambientLight.intensity = 0.45 + lightStrength * 0.65 - weather.intensity * 0.08;
       sunLight.intensity = 0.7 + lightStrength * 1.4;
 
       const mix = clamp(lightStrength, 0, 1);
-      const bgColor = nightColor.clone().lerp(dayColor, mix);
+      lastLightMix = mix;
+      const skyBlend = duskColor.clone().lerp(dayColor, mix);
+      const bgColor = nightColor.clone().lerp(skyBlend, mix + 0.15);
       scene.background = bgColor;
-      scene.fog.color.copy(bgColor);
-      scene.fog.density = 0.008 + (1 - mix) * 0.010;
+      scene.fog.color.copy(bgColor.clone().lerp(duskColor, 0.25));
+      scene.fog.density = 0.008 + (1 - mix) * 0.010 + weather.intensity * 0.004;
+
+      if (skyDome) {
+        skyDome.material.color = bgColor.clone().lerp(duskColor, 0.2);
+      }
 
       if (starMaterial) {
         starMaterial.opacity = 0.1 + (1 - mix) * 0.9;
@@ -2327,7 +2589,78 @@
       else if (t < 0.7) phase = "Dusk";
       else phase = "Night";
 
-      hudBuild.textContent = `Mountains & Forest · ${phase}`;
+      let weatherLabel = "Clear";
+      if (weather.type === "rain") weatherLabel = "Rain";
+      else if (weather.type === "foggy") weatherLabel = "Fog";
+      else if (weather.type === "snow") weatherLabel = "Snow";
+
+      hudBuild.textContent = `Mountains & Forest · ${phase} · ${weatherLabel}`;
+    }
+
+    function setWeather(type) {
+      weather.type = type;
+      if (!weatherMaterial) return;
+
+      if (type === "rain") {
+        weather.intensity = 0.9;
+        weatherMaterial.color.set(0x7dd3fc);
+        weatherMaterial.size = 0.8;
+      } else if (type === "snow") {
+        weather.intensity = 0.65;
+        weatherMaterial.color.set(0xffffff);
+        weatherMaterial.size = 1.1;
+      } else if (type === "foggy") {
+        weather.intensity = 0.55;
+        weatherMaterial.color.set(0xcbd5e1);
+        weatherMaterial.size = 1.4;
+      } else {
+        weather.intensity = 0.0;
+        weatherMaterial.size = 0.8;
+      }
+    }
+
+    function updateWeather(dt) {
+      if (!weatherParticles || !weatherMaterial) return;
+
+      weather.timer -= dt;
+      if (weather.timer <= 0) {
+        const next = ["clear", "rain", "foggy", "snow"][(Math.random() * 4) | 0];
+        setWeather(next);
+        weather.timer = 38 + Math.random() * 26;
+      }
+
+      const positions = weatherParticles.geometry.attributes.position;
+      const count = positions.count;
+      const wind = Math.sin(windTime * 0.6) * 6;
+      let fallSpeed = 0;
+
+      if (weather.type === "rain") fallSpeed = 70;
+      else if (weather.type === "snow") fallSpeed = 18;
+      else if (weather.type === "foggy") fallSpeed = 6;
+
+      for (let i = 0; i < count; i++) {
+        let x = positions.getX(i);
+        let y = positions.getY(i);
+        let z = positions.getZ(i);
+
+        if (fallSpeed > 0) {
+          y -= fallSpeed * dt;
+          x += wind * dt;
+        }
+
+        if (y < WATER_LEVEL + 2) {
+          y = Math.random() * 80 + 40;
+          x = (Math.random() - 0.5) * 260;
+          z = (Math.random() - 0.5) * 260;
+        }
+
+        positions.setXYZ(i, x, y, z);
+      }
+
+      positions.needsUpdate = true;
+
+      const opacityTarget = weather.type === "clear" ? 0 : clamp(weather.intensity * (0.6 + (1 - lastLightMix) * 0.6), 0, 1);
+      weatherMaterial.opacity = opacityTarget;
     }
 
     function updateCamera(dt) {
@@ -2502,6 +2835,19 @@
         const wave = 0.02 * Math.sin(windTime * 0.9);
         waterMaterial.normalScale = new THREE.Vector2(1 + wave, 1 + wave);
       }
+
+      if (grassInstanced && grassData.length) {
+        for (let i = 0; i < grassData.length; i++) {
+          const g = grassData[i];
+          const sway = Math.sin(windTime * 2 + grassOffsets[i]) * 0.25;
+          dummy.position.set(g.x, g.y, g.z);
+          dummy.rotation.set(-0.22 + sway * 0.15, g.rot, sway * 0.3);
+          dummy.scale.setScalar(g.scale);
+          dummy.updateMatrix();
+          grassInstanced.setMatrixAt(i, dummy.matrix);
+        }
+        grassInstanced.instanceMatrix.needsUpdate = true;
+      }
     }
 
     // INPUT
@@ -2566,6 +2912,13 @@
         initAudio();
         tryJump();
       });
+
+      if (jumpOverlay) {
+        jumpOverlay.addEventListener("pointerdown", () => {
+          initAudio();
+          tryJump();
+        });
+      }
 
       window.addEventListener("keydown", (e) => {
         if (e.repeat) return;
@@ -2667,6 +3020,7 @@
         }
       }
 
+      updateWeather(dt);
       updateDayNight(dt);
       updateObstacles(dt);
       updateCamera(dt);
