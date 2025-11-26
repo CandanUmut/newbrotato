@@ -314,6 +314,11 @@
       color: var(--text-soft);
       pointer-events: none;
       text-shadow: 0 0 4px #000;
+      transition: opacity 0.4s ease-out;
+    }
+
+    #hint.hidden {
+      opacity: 0;
     }
 
     /* Joystick */
@@ -357,8 +362,8 @@
     /* Mini-map + dodge HUD */
     #left-panel {
       position: absolute;
-      left: 12px;
-      bottom: 14px;
+      right: 24px;
+      top: 24px;
       width: 180px;
       padding: 10px;
       border-radius: 16px;
@@ -408,20 +413,6 @@
       box-shadow: 0 0 10px rgba(34, 197, 94, 0.8);
     }
 
-    #jump-overlay {
-      position: absolute;
-      left: 12px;
-      bottom: 12px;
-      width: 26%;
-      height: 26%;
-      pointer-events: auto;
-      touch-action: none;
-      background: radial-gradient(circle at top left, rgba(56, 189, 248, 0.08), transparent 65%);
-      border: 1px dashed rgba(148, 163, 184, 0.25);
-      border-radius: 18px;
-      box-shadow: inset 0 0 22px rgba(0, 0, 0, 0.28);
-    }
-
     #dodge-indicator {
       position: absolute;
       right: 26px;
@@ -438,8 +429,7 @@
       align-items: center;
       justify-content: center;
       box-shadow: 0 10px 26px rgba(56, 189, 248, 0.7);
-      pointer-events: auto;
-      cursor: pointer;
+      pointer-events: none;
       z-index: 4;
     }
 
@@ -508,7 +498,7 @@
       #xp-wrapper { width: 92%; }
       .hud-pill { padding: 3px 8px; }
       .screen-card { max-width: 95%; }
-      #left-panel { width: 150px; padding: 8px; }
+      #left-panel { width: 150px; padding: 8px; right: 16px; top: 16px; }
       #dodge-indicator { right: 18px; bottom: 18px; }
     }
 
@@ -573,7 +563,7 @@
     <!-- Hint -->
     <div id="hint">
       PC: WASD / ok tuşları, fareyi sürükleyerek etrafına bak · Space / Shift: kaçın (cooldown'lu dash/jump)<br/>
-      Mobil: sağ taraftaki joystick, sol alttaki alana çift dokun ya da sağdaki küçük simgeye dokunarak dash kullan.
+      Mobil: joystick ile hareket et ve nişan al; kaçınma otomatik olarak cooldown bitince tetiklenir.
     </div>
 
   </div>
@@ -631,9 +621,6 @@
         <div id="upgrade-options" class="upgrade-grid"></div>
       </div>
     </div>
-
-  <!-- Touch helpers -->
-  <div id="jump-overlay" aria-hidden="true"></div>
 
   <!-- Left panel mini-map -->
   <div id="left-panel">
@@ -764,7 +751,7 @@
       x: 0,
       z: 0,
       y: 2,
-      radius: 1.4,
+      radius: 1.6,
       speed: 18,
       hp: 100,
       maxHp: 100,
@@ -819,6 +806,9 @@
     let playerHitJiggle = 0;
     let minimapTimer = 0;
     let doubleTapTimer = 0;
+    let tutorialTimer = 12;
+    let showTutorial = true;
+    let autoDodgeTimer = 0;
 
     // Özel yetenekler
     let novaInterval = 0;
@@ -917,6 +907,7 @@
     const hudKills = document.getElementById("hud-kills");
     const hudTime = document.getElementById("hud-time");
     const hudBuild = document.getElementById("hud-build");
+    const hint = document.getElementById("hint");
 
     const xpFill = document.getElementById("xp-fill");
     const xpText = document.getElementById("xp-text");
@@ -931,7 +922,6 @@
     const btnStart = document.getElementById("btn-start");
     const btnRestart = document.getElementById("btn-restart");
     const btnQuit = document.getElementById("btn-quit");
-    const jumpOverlay = document.getElementById("jump-overlay");
     const minimapCanvas = document.getElementById("minimap");
     const minimapCtx = minimapCanvas.getContext("2d");
     const dodgeIndicator = document.getElementById("dodge-indicator");
@@ -1296,10 +1286,10 @@
     function initThree() {
       scene = new THREE.Scene();
       // Gece koyu, gündüz gökyüzü daha açık mavi
-      scene.background = new THREE.Color(0x0a1424);
-      scene.fog = new THREE.FogExp2(0x0a1424, 0.0038); // daha az yoğun fog, yakın zemini aç
-      
-      dayColor = new THREE.Color(0x87ceeb);  // açık gökyüzü
+      scene.background = new THREE.Color(0x0b1628);
+      scene.fog = new THREE.FogExp2(0x0b1628, 0.0032); // daha az yoğun fog, yakın zemini aç
+
+      dayColor = new THREE.Color(0xa7d8ff);  // açık gökyüzü
       duskColor = new THREE.Color(0x172554);
       nightColor = new THREE.Color(0x020617);
 
@@ -1460,29 +1450,29 @@
 
         if (y < WATER_LEVEL - 3.2) {
           // suyun altında kalan en dip: koyu çamurlu toprak
-          r = 0.28; g = 0.20; b = 0.12;
+          r = 0.32; g = 0.23; b = 0.14;
         } else if (y < WATER_LEVEL + 0.8) {
           // su kenarı / sahil: açık kum rengi
-          r = 0.95; g = 0.82; b = 0.58;
+          r = 0.96; g = 0.84; b = 0.6;
         } else if (y < 4) {
           // alt seviye kum/çamur: sıcak toprak tonları
-          r = 0.78; g = 0.56; b = 0.32;
-          if (biome === "swamp") { r -= 0.06; g += 0.05; b += 0.02; }
-          if (biome === "evergreen") { r += 0.04; g += 0.03; }
+          r = 0.84; g = 0.62; b = 0.36;
+          if (biome === "swamp") { r -= 0.05; g += 0.05; b += 0.02; }
+          if (biome === "evergreen") { r += 0.05; g += 0.04; }
         } else if (y < 10) {
           // yamaçlar: kızıl ve sarı kum karışımı
-          r = 0.86; g = 0.62; b = 0.36;
+          r = 0.9; g = 0.68; b = 0.4;
         } else if (y < 16) {
           // kayalık ama sıcak kahverengiler
-          r = 0.66; g = 0.50; b = 0.36;
+          r = 0.72; g = 0.55; b = 0.4;
         } else {
           // zirve: aydınlık taş / tozlu turuncu
-          r = 0.86; g = 0.78; b = 0.64;
+          r = 0.9; g = 0.8; b = 0.64;
         }
 
         // Hafif gölge / eğim katmanları
-        const valleyShade = 0.9 - (1 - heightNorm) * 0.14;
-        const peakLight = 1 + heightNorm * 0.22;
+        const valleyShade = 0.96 - (1 - heightNorm) * 0.08;
+        const peakLight = 1 + heightNorm * 0.18;
         const ao = valleyShade * peakLight;
         r *= ao;
         g *= ao;
@@ -1492,18 +1482,18 @@
         const tx = Math.floor((x + WORLD_SIZE / 2) / tileSize);
         const tz = Math.floor((z + WORLD_SIZE / 2) / tileSize);
         const checker = (tx + tz) & 1;
-        const checkerMul = checker ? 1.08 : 0.9; // biri biraz koyu, biri biraz açık
+        const checkerMul = checker ? 1.05 : 0.94; // biri biraz koyu, biri biraz açık
 
         r *= checkerMul;
         g *= checkerMul;
         b *= checkerMul;
 
         // Genel olarak aydınlat: gece bile zemini net görelim
-        const warmNoise = (Perlin.noise(x * 0.04, z * 0.04) * 0.03);
-        const brighten = 1.12;
-        r = Math.min((r + warmNoise) * brighten + 0.02, 1.0);
-        g = Math.min((g + warmNoise * 0.5) * brighten + 0.02, 1.0);
-        b = Math.min((b + warmNoise * 0.35) * brighten + 0.015, 1.0);
+        const warmNoise = (Perlin.noise(x * 0.04, z * 0.04) * 0.035);
+        const brighten = 1.2;
+        r = Math.min((r + warmNoise) * brighten + 0.035, 1.0);
+        g = Math.min((g + warmNoise * 0.45) * brighten + 0.03, 1.0);
+        b = Math.min((b + warmNoise * 0.28) * brighten + 0.025, 1.0);
     
         colors[i * 3 + 0] = r;
         colors[i * 3 + 1] = g;
@@ -1516,8 +1506,9 @@
     
       groundMaterial = new THREE.MeshStandardMaterial({
         vertexColors: true,
-        metalness: 0.02,
-        roughness: 0.94,
+        color: 0x8b5a2b,
+        metalness: 0.0,
+        roughness: 0.98,
         flatShading: true, // low-poly / minecraft hissi için daha net yüzeyler
         transparent: false,
         opacity: 1,
@@ -1531,9 +1522,9 @@
       // Arazinin hatlarını takip eden tel kafes grid
       const gridGeo = new THREE.WireframeGeometry(groundGeo);
       const gridMat = new THREE.LineBasicMaterial({
-        color: 0x3d2a16,
+        color: 0x4b3119,
         transparent: true,
-        opacity: 0.22,
+        opacity: 0.16,
       });
       const groundGrid = new THREE.LineSegments(gridGeo, gridMat);
       groundGrid.rotation.x = -Math.PI / 2;
@@ -1834,7 +1825,7 @@
       const accentMat = new THREE.MeshStandardMaterial({
         color: 0x38bdf8,
         emissive: 0x38bdf8,
-        emissiveIntensity: 1.2,
+        emissiveIntensity: 1.4,
         roughness: 0.3,
         metalness: 0.7,
       });
@@ -1879,6 +1870,15 @@
       core.castShadow = true;
       core.userData.pulse = true;
       group.add(core);
+
+      const coreRingGeo = new THREE.TorusGeometry(0.62, 0.08, 10, 26);
+      const coreRing = new THREE.Mesh(coreRingGeo, accentMat.clone());
+      coreRing.material.emissiveIntensity = 1.1;
+      coreRing.rotation.x = Math.PI / 2;
+      coreRing.position.set(0, 0.6, 0.4);
+      coreRing.castShadow = true;
+      coreRing.userData.pulse = true;
+      group.add(coreRing);
 
       // Zırh çizgisi
       const chestPlateGeo = new THREE.BoxGeometry(1.4, 0.35, 0.7);
@@ -1969,6 +1969,7 @@
       group.position.set(0, groundY + 2.2, 0);
       group.rotation.y = Math.PI;
       group.castShadow = true;
+      group.scale.set(1.2, 1.2, 1.2);
       scene.add(group);
 
       player.x = 0;
@@ -2442,13 +2443,17 @@
       player.invuln = 0;
       player.magnetPull = 0;
       player.burstTimer = 0;
+      autoDodgeTimer = player.dodgeCooldownMax;
+      tutorialTimer = 12;
+      showTutorial = true;
+      if (hint) hint.classList.remove("hidden");
 
       const groundY = terrainHeight(player.x, player.z);
       player.y = groundY + 2.2;
       if (player.mesh) {
         player.mesh.position.set(player.x, player.y, player.z);
         player.mesh.rotation.y = Math.PI;
-        player.mesh.scale.set(1, 1, 1);
+        player.mesh.scale.set(1.2, 1.2, 1.2);
       }
 
       elapsedTime = 0;
@@ -2478,10 +2483,10 @@
 
     // SPAWNS
     function difficultyMultiplier() {
-      const timeRamp = 1 + elapsedTime * 0.008;
-      const levelRamp = 1 + (level - 1) * 0.1;
-      const hardcoreRamp = Math.pow(1 + elapsedTime / 320, 1.18);
-      return timeRamp * levelRamp * hardcoreRamp;
+      const timeRamp = 1 + elapsedTime * 0.0045;
+      const levelRamp = 1 + (level - 1) * 0.08;
+      const lateGameRamp = Math.pow(1 + Math.max(0, elapsedTime - 60) / 260, 1.08);
+      return 0.85 * timeRamp * levelRamp * lateGameRamp;
     }
 
     function randomEnemyVariant(type) {
@@ -2533,26 +2538,26 @@
       mesh.position.set(x, baseY, z);
       scene.add(mesh);
 
-      const hpScale = 1 + difficulty * 0.55;
-      const damageScale = 1 + difficulty * 0.35;
-      const speedScale = 1 + Math.min(difficulty * 0.12, 1.05);
+      const hpScale = 0.9 + difficulty * 0.42;
+      const damageScale = 0.9 + difficulty * 0.28;
+      const speedScale = 1 + Math.min(difficulty * 0.08, 0.7);
 
-      let baseHp = 22 * hpScale;
-      let baseSpeed = (9 + level * 0.12) * speedScale;
-      let damage = 10 * damageScale;
+      let baseHp = 18 * hpScale;
+      let baseSpeed = (8 + level * 0.1) * speedScale;
+      let damage = 8 * damageScale;
 
       if (t === 1) {
-        baseHp = 28 * hpScale;
-        baseSpeed = 11.5 * speedScale;
-        damage = 12 * damageScale;
+        baseHp = 24 * hpScale;
+        baseSpeed = 10.5 * speedScale;
+        damage = 10 * damageScale;
       } else if (t === 2) {
-        baseHp = 36 * hpScale;
-        baseSpeed = 7.2 * speedScale;
-        damage = 15 * damageScale;
+        baseHp = 32 * hpScale;
+        baseSpeed = 6.8 * speedScale;
+        damage = 13 * damageScale;
       } else if (t === 3) {
-        baseHp = 20 * hpScale;
-        baseSpeed = 15 * speedScale;
-        damage = 11 * damageScale;
+        baseHp = 18 * hpScale;
+        baseSpeed = 13.2 * speedScale;
+        damage = 10 * damageScale;
       } else if (t === 4) {
         baseHp = 90 * hpScale;
         baseSpeed = 8 * speedScale;
@@ -2852,6 +2857,7 @@
       player.vy = 22 + player.dodgeBoost * 2;
       player.onGround = false;
       player.dodgeCooldown = player.dodgeCooldownMax;
+      autoDodgeTimer = player.dodgeCooldownMax;
       player.invuln = 0.75;
       player.burstTimer = 0.5;
       cameraShake = Math.max(cameraShake, 0.15);
@@ -2973,6 +2979,10 @@
       }
 
       player.dodgeCooldown = Math.max(0, player.dodgeCooldown - dt);
+      autoDodgeTimer = Math.max(0, autoDodgeTimer - dt);
+      if (autoDodgeTimer <= 0 && player.onGround) {
+        tryJump();
+      }
       player.invuln = Math.max(0, player.invuln - dt);
     }
 
@@ -3523,17 +3533,23 @@
 
       sunLight.position.set(sunX * 80, sunY * 80 + 60, 30);
 
-      const lightStrength = clamp(sunY * 0.8 + 0.2, 0.05, 1.2);
-      ambientLight.intensity = 0.55 + lightStrength * 0.65 - weather.intensity * 0.1;
-      sunLight.intensity = 0.8 + lightStrength * 1.25;
+      const lightStrength = clamp(sunY * 0.8 + 0.25, 0.08, 1.25);
+      const daySunColor = new THREE.Color(0xffe0a0);
+      const nightSunColor = new THREE.Color(0x4c5c7a);
+      sunLight.color = nightSunColor.clone().lerp(daySunColor, clamp(lightStrength, 0, 1));
+      ambientLight.intensity = 0.52 + lightStrength * 0.7 - weather.intensity * 0.08;
+      sunLight.intensity = 0.9 + lightStrength * 1.35;
 
       const mix = clamp(lightStrength, 0, 1);
       lastLightMix = mix;
       const skyBlend = duskColor.clone().lerp(dayColor, mix);
-      const bgColor = nightColor.clone().lerp(skyBlend, mix + 0.15);
+      const bgColor = nightColor.clone().lerp(skyBlend, mix + 0.18);
       scene.background = bgColor;
-      scene.fog.color.copy(bgColor.clone().lerp(duskColor, 0.25));
-      scene.fog.density = 0.0032 + (1 - mix) * 0.004 + weather.intensity * 0.0025;
+      const fogDay = new THREE.Color(0xd9e5ff);
+      const fogNight = new THREE.Color(0x0c1324);
+      const fogColor = fogNight.clone().lerp(fogDay, mix);
+      scene.fog.color.copy(fogColor);
+      scene.fog.density = 0.0024 + (1 - mix) * 0.0036 + weather.intensity * 0.002;
 
       if (skyDome) {
         skyDome.material.color = bgColor.clone().lerp(duskColor, 0.2);
@@ -3559,8 +3575,9 @@
       }
 
       if (groundMaterial) {
-        groundMaterial.roughness = 0.92 - mix * 0.08;
-        groundMaterial.metalness = 0.04 + mix * 0.05;
+        groundMaterial.roughness = 0.96 - mix * 0.04;
+        groundMaterial.metalness = 0.0;
+        groundMaterial.color = new THREE.Color(0x7a4c24).lerp(new THREE.Color(0xd9b47a), mix * 0.65);
       }
       if (waterMaterial) {
         // Su rengi gün içinde hafif değişsin
@@ -3994,24 +4011,6 @@
         quitToStart();
       });
 
-      if (dodgeIndicator) {
-        dodgeIndicator.addEventListener("click", () => {
-          initAudio();
-          tryJump();
-        });
-      }
-
-      if (jumpOverlay) {
-        jumpOverlay.addEventListener("pointerdown", () => {
-          initAudio();
-          const now = performance.now();
-          if (now - doubleTapTimer < 260) {
-            tryJump();
-          }
-          doubleTapTimer = now;
-        });
-      }
-
       window.addEventListener("keydown", (e) => {
         if (e.repeat) return;
         const k = e.key;
@@ -4092,9 +4091,9 @@
         spawnTimer -= dt;
         if (spawnTimer <= 0) {
           const difficulty = difficultyMultiplier();
-          const wave = 1 + Math.floor(Math.max(0, (difficulty - 2.5) * 0.35));
+          const wave = 1 + Math.floor(Math.max(0, (difficulty - 2.0) * 0.28));
           for (let n = 0; n < wave; n++) spawnEnemy();
-          const spawnInterval = Math.max(0.18, 1.05 / (1.15 + difficulty * 0.35));
+          const spawnInterval = Math.max(0.35, 1.25 / (1.1 + difficulty * 0.28));
           spawnTimer = spawnInterval;
         }
 
@@ -4116,6 +4115,14 @@
           if (novaTimer <= 0) {
             novaTimer = novaInterval;
             triggerNovaPulse();
+          }
+        }
+
+        if (showTutorial) {
+          tutorialTimer -= dt;
+          if (tutorialTimer <= 0 && hint) {
+            showTutorial = false;
+            hint.classList.add("hidden");
           }
         }
       }
