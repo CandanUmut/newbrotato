@@ -371,14 +371,14 @@
       position: absolute;
       left: 12px;
       bottom: 12px;
-      width: 38%;
-      height: 46%;
+      width: 28%;
+      height: 28%;
       pointer-events: auto;
       touch-action: none;
-      background: radial-gradient(circle at top left, rgba(56, 189, 248, 0.09), transparent 65%);
+      background: radial-gradient(circle at top left, rgba(56, 189, 248, 0.12), transparent 65%);
       border: 1px dashed rgba(148, 163, 184, 0.35);
       border-radius: 18px;
-      box-shadow: inset 0 0 25px rgba(0, 0, 0, 0.35);
+      box-shadow: inset 0 0 28px rgba(0, 0, 0, 0.35);
     }
 
     @media (max-width: 768px) {
@@ -668,20 +668,27 @@
 
     // Audio
     let audioCtx = null;
+    let masterGain = null;
     let soundEnabled = true;
 
     function initAudio() {
       if (!soundEnabled) return;
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;
-      if (!audioCtx) audioCtx = new AC();
-      if (audioCtx.state === "suspended" && audioCtx.resume) audioCtx.resume();
+      if (!audioCtx) audioCtx = new AC({ latencyHint: "interactive" });
+      if (audioCtx.state === "suspended" && audioCtx.resume) audioCtx.resume().catch(() => {});
+
+      if (!masterGain) {
+        masterGain = audioCtx.createGain();
+        masterGain.gain.value = 0.9;
+        masterGain.connect(audioCtx.destination);
+      }
 
       // iOS/Android tarayıcıları için sessiz tetikleyici
       const silentBuffer = audioCtx.createBuffer(1, 1, audioCtx.sampleRate);
       const node = audioCtx.createBufferSource();
       node.buffer = silentBuffer;
-      node.connect(audioCtx.destination);
+      node.connect(masterGain);
       node.start();
     }
 
@@ -693,6 +700,7 @@
       volume = 0.3,
       type = "sine"
     }) {
+      if (!audioCtx && soundEnabled) initAudio();
       if (!audioCtx || !soundEnabled) return;
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
@@ -706,7 +714,7 @@
       gain.gain.linearRampToValueAtTime(0.0001, now + duration);
 
       osc.connect(gain);
-      gain.connect(audioCtx.destination);
+      gain.connect(masterGain || audioCtx.destination);
       osc.start(now);
       osc.stop(now + duration + 0.02);
     }
@@ -1308,13 +1316,13 @@
     }
 
     function scatterGrass() {
-      const count = 1200;
-      const geo = new THREE.ConeGeometry(0.16, 0.9, 6);
+      const count = 2200;
+      const geo = new THREE.ConeGeometry(0.16, 0.95, 6);
       geo.translate(0, 0.45, 0);
       const mat = new THREE.MeshStandardMaterial({
         color: 0x22c55e,
         emissive: 0x15803d,
-        emissiveIntensity: 0.35,
+        emissiveIntensity: 0.42,
         roughness: 0.9,
         metalness: 0.05,
         flatShading: true,
@@ -1332,7 +1340,7 @@
         if (y < WATER_LEVEL + 0.4) { i--; continue; }
         if (Math.hypot(x, z) < 8) { i--; continue; }
 
-        const s = 0.6 + Math.random() * 0.8;
+        const s = 0.7 + Math.random() * 0.9;
         const rot = Math.random() * Math.PI * 2;
         dummy.position.set(x, y, z);
         dummy.rotation.set(-0.12, rot, 0);
@@ -1974,12 +1982,12 @@
     }
 
     function spawnXpOrb(x, z) {
-      const geo = new THREE.SphereGeometry(0.35, 10, 10);
+      const geo = new THREE.SphereGeometry(0.55, 12, 12);
       const mat = new THREE.MeshStandardMaterial({
-        color: 0x22c55e,
-        emissive: 0x16a34a,
-        emissiveIntensity: 1,
-        roughness: 0.35,
+        color: 0xa855f7,
+        emissive: 0x7c3aed,
+        emissiveIntensity: 1.1,
+        roughness: 0.28,
       });
       const mesh = new THREE.Mesh(geo, mat);
       const groundY = terrainHeight(x, z);
@@ -1990,7 +1998,7 @@
       xpOrbs.push({
         x,
         z,
-        radius: 0.4,
+        radius: 0.6,
         value: 1 + Math.random(),
         mesh,
       });
@@ -2888,6 +2896,8 @@
       // Mobil tarayıcılarda kullanıcı etkileşimine en kısa sürede audio başlat
       window.addEventListener("touchstart", () => initAudio(), { passive: true });
       window.addEventListener("pointerdown", () => initAudio(), { passive: true });
+      window.addEventListener("touchend", () => initAudio(), { passive: true });
+      window.addEventListener("keydown", () => initAudio());
 
       soundToggle.addEventListener("change", (e) => {
         soundEnabled = e.target.checked;
