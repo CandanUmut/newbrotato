@@ -498,10 +498,12 @@
 
   <script>
     // === WORLD CONSTANTS ===
-    const WORLD_SIZE = 420;          // Daha geniş harita
+    const WORLD_SIZE = 640;          // Daha geniş harita
     const DAY_LENGTH = 40;           // saniye (gece-gündüz turu)
-    const OBSTACLE_COUNT_TREES = 180;
-    const OBSTACLE_COUNT_ROCKS = 90;
+    const OBSTACLE_COUNT_TREES = 260;
+    const OBSTACLE_COUNT_ROCKS = 140;
+    const WATER_LEVEL = -5.5;
+    const BIOME_SCALE = 0.0055;
 
     let scene, camera, renderer;
     let lastTime = performance.now();
@@ -568,11 +570,20 @@
     })();
 
     function terrainHeight(x, z) {
-      const s1 = 0.012;
-      const s2 = 0.038;
-      const h1 = Perlin.noise(x * s1, z * s1) * 20;
-      const h2 = Perlin.noise(x * s2 + 100, z * s2 + 100) * 7;
-      return h1 + h2 - 11;
+      const s1 = 0.009;
+      const s2 = 0.028;
+      const ridge = Math.abs(Perlin.noise(x * s2 - 80, z * s2 + 110)) * 12;
+      const h1 = Perlin.noise(x * s1, z * s1) * 26;
+      const h2 = Perlin.noise(x * s2 + 100, z * s2 + 100) * 8;
+      return h1 + h2 + ridge - 13;
+    }
+
+    function biomeAt(x, z) {
+      const n = Perlin.noise(x * BIOME_SCALE, z * BIOME_SCALE);
+      if (n > 0.25) return "evergreen";   // gür çim
+      if (n < -0.2) return "dirt";        // toprak / kuru alan
+      if (n < -0.45) return "swamp";      // suya yakın çamurlu
+      return "grass";
     }
 
     // Player
@@ -599,7 +610,10 @@
       pierce: 0,
       auraDamage: 0,
       dashPower: 0,
-      damageReduction: 0
+      damageReduction: 0,
+      weapons: ["blaster"],
+      bulletScale: 1,
+      bonusFireRate: 0
     };
 
     const enemies = [];
@@ -835,6 +849,59 @@
         tag: "Utility",
         desc: "Kamera takibi ve kontrol daha yumuşak.",
         apply() { cameraFollowSmooth = 0.2; }
+      },
+      {
+        id: "weapon_scatter",
+        name: "Scatter Cannon",
+        tag: "Weapon",
+        desc: "Kısa menzilli saçma atışı eklenir, yakın dövüşte yıkıcı.",
+        apply() {
+          if (!player.weapons.includes("scatter")) player.weapons.push("scatter");
+        }
+      },
+      {
+        id: "weapon_rail",
+        name: "Rail Spear",
+        tag: "Weapon",
+        desc: "Zırh delen ray mermileri açılır, yüksek hız + delme.",
+        apply() {
+          player.pierce = Math.max(player.pierce, 3);
+          if (!player.weapons.includes("rail")) player.weapons.push("rail");
+        }
+      },
+      {
+        id: "weapon_arc",
+        name: "Arc Driver",
+        tag: "Weapon",
+        desc: "Kısa menzilli elektrik yayları eklenir, kalabalık eritme.",
+        apply() {
+          if (!player.weapons.includes("arc")) player.weapons.push("arc");
+        }
+      },
+      {
+        id: "deflect",
+        name: "Bulwark Plating",
+        tag: "Defense",
+        desc: "Max HP +60, gelen hasar %15 azalır.",
+        apply() { player.maxHp += 60; player.hp += 30; player.damageReduction = (player.damageReduction || 0) + 0.15; }
+      },
+      {
+        id: "overcharge",
+        name: "Overcharger",
+        tag: "Attack",
+        desc: "Mermi boyutu %25 büyür, fire rate %20 artar.",
+        apply() { player.bulletScale *= 1.25; player.fireRate *= 1.2; player.bonusFireRate += 0.15; }
+      },
+      {
+        id: "maelstrom",
+        name: "Storm Core",
+        tag: "Attack",
+        desc: "Nova bekleme süresi -%25, aura hasarı +10.",
+        apply() {
+          player.auraDamage += 10;
+          if (novaInterval > 0) { novaInterval *= 0.75; novaTimer = Math.min(novaTimer, novaInterval); }
+          else { novaInterval = 7; novaTimer = 7; }
+        }
       }
     ];
 
@@ -1003,7 +1070,6 @@
       const colors = new Float32Array(pos.count * 3);
     
       const tileSize = 6;       // "kare" boyutu – yön hissi için
-      const waterLevel = -6;    // su seviyesi (daha yukarıda, yere yakın)
     
       for (let i = 0; i < pos.count; i++) {
         const x = pos.getX(i);
@@ -1023,19 +1089,31 @@
         // Daha "minecraft" hissi: kum, çim, toprak, taş net ayrılsın
         let r, g, b;
     
-        if (y < waterLevel - 3) {
+        const biome = biomeAt(x, z);
+
+        if (y < WATER_LEVEL - 3) {
           // suyun altında kalan en dip: koyu çamurlu toprak
           // koyu zeytin tonları
           r = 0.20; g = 0.22; b = 0.16;
-        } else if (y < waterLevel + 0.3) {
+        } else if (y < WATER_LEVEL + 0.3) {
           // su kenarı / sahil: açık kum rengi
           r = 0.93; g = 0.83; b = 0.58; // sıcak sarımsı kum
         } else if (y < 4) {
-          // alt seviye çim – düz alanlar
-          r = 0.18; g = 0.60; b = 0.24; // canlı yeşil
+          // alt seviye çim – düz alanlar, biyoma göre renk
+          if (biome === "dirt") {
+            r = 0.42; g = 0.32; b = 0.22;
+          } else if (biome === "swamp") {
+            r = 0.28; g = 0.42; b = 0.24;
+          } else {
+            r = 0.18; g = 0.60; b = 0.24; // canlı yeşil
+          }
         } else if (y < 10) {
           // yamaç çimleri – biraz daha açık
-          r = 0.25; g = 0.70; b = 0.32;
+          if (biome === "evergreen") {
+            r = 0.20; g = 0.65; b = 0.30;
+          } else {
+            r = 0.25; g = 0.70; b = 0.32;
+          }
         } else {
           // tepeler: taş / kayalık, gri tonlar
           r = 0.70; g = 0.70; b = 0.72;
@@ -1089,7 +1167,7 @@
       // Su rengi de daha belirgin, ama zemin maviye boğulmasın
       const waterGeo = new THREE.PlaneGeometry(WORLD_SIZE * 1.4, WORLD_SIZE * 1.4);
       waterMaterial = new THREE.MeshStandardMaterial({
-        color: 0x8B4513, // SaddleBrown or something close to muddy water
+        color: 0x1d4ed8,
         transparent: true,
         opacity: 0.6,
         metalness: 0.1,
@@ -1098,7 +1176,7 @@
     
       const water = new THREE.Mesh(waterGeo, waterMaterial);
       water.rotation.x = -Math.PI / 2;
-      water.position.y = waterLevel;
+      water.position.y = WATER_LEVEL;
       water.receiveShadow = false;
       scene.add(water);
     }
@@ -1447,6 +1525,42 @@
         g.add(armL, armR);
 
         radius = 1.2;
+      } else if (type === 4) {
+        // Bulky tank
+        const shellGeo = new THREE.CapsuleGeometry(1, 1.8, 10, 18);
+        const shellMat = new THREE.MeshStandardMaterial({
+          color: 0x9f1239,
+          emissive: 0xbe123c,
+          emissiveIntensity: 0.6,
+          roughness: 0.35,
+          metalness: 0.65,
+        });
+        const shell = new THREE.Mesh(shellGeo, shellMat);
+        shell.position.y = 1.6;
+        shell.castShadow = true;
+        g.add(shell);
+
+        const eyeGeo = new THREE.SphereGeometry(0.45, 12, 12);
+        const eyeMat = new THREE.MeshStandardMaterial({
+          color: 0xffffff,
+          emissive: 0xf87171,
+          emissiveIntensity: 1.2,
+        });
+        const eye = new THREE.Mesh(eyeGeo, eyeMat);
+        eye.position.set(0, 2.2, 0.8);
+        eye.castShadow = true;
+        g.add(eye);
+
+        const tuskGeo = new THREE.ConeGeometry(0.18, 0.6, 8);
+        const tuskMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 });
+        const tuskL = new THREE.Mesh(tuskGeo, tuskMat);
+        tuskL.position.set(-0.4, 1.4, 1);
+        tuskL.rotation.x = Math.PI / 2.2;
+        const tuskR = tuskL.clone();
+        tuskR.position.x = 0.4;
+        g.add(tuskL, tuskR);
+
+        radius = 1.5;
       } else {
         // Hopper
         const bodyGeo = new THREE.SphereGeometry(0.9, 14, 14);
@@ -1516,6 +1630,9 @@
       player.auraDamage = 0;
       player.dashPower = 0;
       player.damageReduction = 0;
+      player.weapons = ["blaster"];
+      player.bulletScale = 1;
+      player.bonusFireRate = 0;
 
       const groundY = terrainHeight(player.x, player.z);
       player.y = groundY + 2.2;
@@ -1555,7 +1672,9 @@
       x = clamp(x, -WORLD_SIZE / 2 + 8, WORLD_SIZE / 2 - 8);
       z = clamp(z, -WORLD_SIZE / 2 + 8, WORLD_SIZE / 2 - 8);
 
-      const t = Math.floor(Math.random() * 4);
+      const difficulty = 1 + level * 0.08 + elapsedTime / 90;
+      let t = Math.floor(Math.random() * 4);
+      if (difficulty > 3.2 && Math.random() < 0.28) t = 4;
       const { mesh, radius } = createEnemyMesh(t);
 
       const groundY = terrainHeight(x, z);
@@ -1564,10 +1683,11 @@
       scene.add(mesh);
 
       const timeFactor = 1 + elapsedTime / 160;
+      const levelFactor = 1 + (level - 1) * 0.12;
 
-      let baseHp = 18 * timeFactor;
-      let baseSpeed = 9;
-      let damage = 10 * timeFactor;
+      let baseHp = 18 * timeFactor * levelFactor;
+      let baseSpeed = 9 + level * 0.12;
+      let damage = 10 * timeFactor * (1 + (level - 1) * 0.04);
 
       if (t === 1) {
         baseHp = 20 * timeFactor;
@@ -1581,6 +1701,10 @@
         baseHp = 14 * timeFactor;
         baseSpeed = 14;
         damage = 11 * timeFactor;
+      } else if (t === 4) {
+        baseHp = 60 * timeFactor * levelFactor;
+        baseSpeed = 7.5;
+        damage = 18 * levelFactor;
       }
 
       enemies.push({
@@ -1599,13 +1723,14 @@
       });
     }
 
-    function spawnBullet(dirX, dirZ, fromPlayer = true, origin = null, speedOverride = null, pierceCount = 0) {
+    function spawnBullet(dirX, dirZ, fromPlayer = true, origin = null, speedOverride = null, pierceCount = 0, style = {}) {
       const n = normalize2(dirX, dirZ);
-      const geo = new THREE.SphereGeometry(fromPlayer ? 0.28 : 0.22, 10, 10);
+      const radius = style.radius || (fromPlayer ? 0.28 * player.bulletScale : 0.22);
+      const geo = new THREE.SphereGeometry(radius, 10, 10);
       const mat = new THREE.MeshStandardMaterial({
-        color: fromPlayer ? 0xfacc15 : 0x6366f1,
-        emissive: fromPlayer ? 0xfacc15 : 0x6366f1,
-        emissiveIntensity: 1,
+        color: style.color || (fromPlayer ? 0xfacc15 : 0x6366f1),
+        emissive: style.emissive || (fromPlayer ? 0xfacc15 : 0x6366f1),
+        emissiveIntensity: style.emissiveIntensity || 1,
         roughness: 0.3,
         metalness: 0.3,
       });
@@ -1630,11 +1755,13 @@
         z: mesh.position.z,
         vx: n.x * speed,
         vz: n.z * speed,
-        radius: fromPlayer ? 0.3 : 0.25,
-        life: fromPlayer ? player.bulletLife : 2.4,
+        radius: style.hitRadius || (fromPlayer ? 0.3 * player.bulletScale : 0.25),
+        life: style.life || (fromPlayer ? player.bulletLife : 2.4),
         mesh,
         fromPlayer,
-        remainingPierce: pierceCount
+        remainingPierce: pierceCount,
+        damageScale: style.damageScale || 1,
+        homing: style.homing || false
       });
 
       if (fromPlayer) sShoot();
@@ -1879,6 +2006,18 @@
             vz = hopDir.z * (e.speed * 2.4);
             e.hopTimer = 1.2 + Math.random();
           }
+        } else if (e.type === 4) {
+          // Tank: kısa süreli hızlanma, çarpışınca ağır hasar
+          e.fireCooldown -= dt;
+          if (e.fireCooldown <= 0) {
+            const burst = normalize2(dx, dz);
+            vx = burst.x * (e.speed * 2.2);
+            vz = burst.z * (e.speed * 2.2);
+            e.fireCooldown = 2 + Math.random();
+          } else {
+            vx *= 0.75;
+            vz *= 0.75;
+          }
         }
 
         e.x += vx * dt;
@@ -1888,7 +2027,7 @@
         e.z = clamp(e.z, -WORLD_SIZE / 2 + 3, WORLD_SIZE / 2 - 3);
 
         const groundY = terrainHeight(e.x, e.z);
-        const baseY = e.type === 2 ? groundY + 1.8 : groundY + 1.4;
+        const baseY = e.type === 2 ? groundY + 1.8 : (e.type === 4 ? groundY + 1.6 : groundY + 1.4);
         e.mesh.position.set(e.x, baseY, e.z);
 
         const dPlayer = Math.hypot(player.x - e.x, player.z - e.z);
@@ -1910,6 +2049,18 @@
     function updateBullets(dt) {
       for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
+
+        if (b.homing && b.fromPlayer && enemies.length > 0) {
+          let target = enemies[0];
+          let best = Infinity;
+          for (const e of enemies) {
+            const d2 = (e.x - b.x) ** 2 + (e.z - b.z) ** 2;
+            if (d2 < best) { best = d2; target = e; }
+          }
+          const n = normalize2(target.x - b.x, target.z - b.z);
+          b.vx = b.vx * 0.8 + n.x * Math.abs(b.vx) * 0.8;
+          b.vz = b.vz * 0.8 + n.z * Math.abs(b.vz) * 0.8;
+        }
         b.x += b.vx * dt;
         b.z += b.vz * dt;
         b.life -= dt;
@@ -1932,7 +2083,7 @@
             const e = enemies[j];
             const d = Math.hypot(e.x - b.x, e.z - b.z);
             if (d < e.radius + b.radius) {
-              let dmg = player.damage;
+              let dmg = player.damage * (b.damageScale || 1);
               if (player.critChance && Math.random() < player.critChance) {
                 dmg *= 1.8;
               }
@@ -2023,6 +2174,67 @@
       }
     }
 
+    function fireWeapon(type, dirX, dirZ) {
+      if (type === "scatter") {
+        const pellets = 7;
+        for (let i = 0; i < pellets; i++) {
+          const spread = (Math.random() - 0.5) * 0.55;
+          const rotated = rotate2D(dirX, dirZ, spread);
+          spawnBullet(rotated.x, rotated.z, true, null, player.bulletSpeed * 0.9, Math.max(0, player.pierce - 1), {
+            life: 1.4,
+            color: 0xfbbf24,
+            emissive: 0xf59e0b,
+            hitRadius: 0.32,
+            damageScale: 0.55
+          });
+        }
+        return;
+      }
+
+      if (type === "rail") {
+        spawnBullet(dirX, dirZ, true, null, player.bulletSpeed * 1.6, Math.max(player.pierce, 4), {
+          color: 0x38bdf8,
+          emissive: 0x38bdf8,
+          emissiveIntensity: 1.4,
+          radius: 0.22 * player.bulletScale,
+          hitRadius: 0.36,
+          life: 3.4,
+          damageScale: 1.6
+        });
+        return;
+      }
+
+      if (type === "arc") {
+        const arcs = 5;
+        for (let i = 0; i < arcs; i++) {
+          const t = i / (arcs - 1) - 0.5;
+          const rotated = rotate2D(dirX, dirZ, t * 0.6);
+          spawnBullet(rotated.x, rotated.z, true, null, player.bulletSpeed * 0.7, 1, {
+            life: 0.9,
+            color: 0x22d3ee,
+            emissive: 0x22d3ee,
+            hitRadius: 0.34,
+            damageScale: 0.75,
+            homing: true
+          });
+        }
+        return;
+      }
+
+      // Default blaster
+      const shots = player.multiShot || 1;
+      const baseSpread = (shots > 1) ? 0.22 : 0;
+      for (let i = 0; i < shots; i++) {
+        let angleOffset = 0;
+        if (shots > 1) {
+          const t = (shots === 1) ? 0 : (i / (shots - 1)) - 0.5;
+          angleOffset = t * baseSpread;
+        }
+        const rotated = rotate2D(dirX, dirZ, angleOffset);
+        spawnBullet(rotated.x, rotated.z, true, null, null, player.pierce);
+      }
+    }
+
     function autoShoot(dt) {
       shootCooldown -= dt;
       if (shootCooldown > 0) return;
@@ -2048,21 +2260,11 @@
       const dirX = closest.x - player.x;
       const dirZ = closest.z - player.z;
 
-      const shots = player.multiShot || 1;
-      const baseSpread = (shots > 1) ? 0.22 : 0;
-
-      for (let i = 0; i < shots; i++) {
-        let angleOffset = 0;
-        if (shots > 1) {
-          const t = (shots === 1) ? 0 : (i / (shots - 1)) - 0.5;
-          angleOffset = t * baseSpread;
-        }
-        const rotated = rotate2D(dirX, dirZ, angleOffset);
-        spawnBullet(rotated.x, rotated.z, true, null, null, player.pierce);
-      }
+      const loadout = player.weapons.length ? player.weapons : ["blaster"];
+      loadout.forEach(w => fireWeapon(w, dirX, dirZ));
 
       // fireRate = saniyedeki atış sayısı
-      shootCooldown = 1 / player.fireRate;
+      shootCooldown = 1 / (player.fireRate + player.bonusFireRate);
     }
 
     function updateDayNight(dt) {
@@ -2163,6 +2365,13 @@
       hudLevel.textContent = level;
       hudKills.textContent = killCount;
       hudTime.textContent = formatTime(elapsedTime);
+
+      let stage = "Mountains & Forest";
+      if (level >= 4) stage = "Emerald Ridges";
+      if (level >= 8) stage = "Dirt Barrens";
+      if (level >= 12) stage = "Glacier Coast";
+      if (elapsedTime > 240) stage = "Stormfront";
+      hudBuild.textContent = stage;
 
       const ratio = clamp(xp / xpNeeded, 0, 1);
       xpFill.style.width = `${ratio * 100}%`;
@@ -2330,6 +2539,10 @@
     function setupInput() {
       soundEnabled = soundToggle.checked;
 
+      // Mobil tarayıcılarda kullanıcı etkileşimine en kısa sürede audio başlat
+      window.addEventListener("touchstart", () => initAudio(), { passive: true });
+      window.addEventListener("pointerdown", () => initAudio(), { passive: true });
+
       soundToggle.addEventListener("change", (e) => {
         soundEnabled = e.target.checked;
         if (soundEnabled) initAudio();
@@ -2433,7 +2646,8 @@
         spawnTimer -= dt;
         if (spawnTimer <= 0) {
           spawnEnemy();
-          const spawnInterval = Math.max(0.3, 0.9 - elapsedTime / 90);
+          const difficulty = 1 + level * 0.05 + elapsedTime / 110;
+          const spawnInterval = Math.max(0.28, 0.95 / difficulty);
           spawnTimer = spawnInterval;
         }
 
