@@ -41,6 +41,18 @@
       position: fixed;
       inset: 0;
       pointer-events: none;
+      z-index: 2;
+    }
+
+    #damage-flash {
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(circle at center, rgba(248, 113, 113, 0.22), rgba(127, 29, 29, 0.55));
+      mix-blend-mode: screen;
+      opacity: 0;
+      transition: opacity 0.12s ease-out;
+      pointer-events: none;
+      z-index: 3;
     }
 
     /* HUD */
@@ -507,6 +519,7 @@
 
     <!-- Jump button (mobile) -->
     <button id="btn-jump">⤴</button>
+    <div id="damage-flash" aria-hidden="true"></div>
   </div>
 
   <!-- Three.js CDN -->
@@ -520,6 +533,7 @@
     const OBSTACLE_COUNT_ROCKS = 140;
     const WATER_LEVEL = -7;
     const BIOME_SCALE = 0.0055;
+    const BOSS_INTERVAL = 60;
 
     let scene, camera, renderer;
     let lastTime = performance.now();
@@ -651,6 +665,7 @@
     const obstacles = []; // dağlar/ağaç/taş colliderları
     const effects = [];   // görsel efektler (nova halkası vb.)
     const hearts = [];    // can kalpleri
+    let heartGeometry = null;
 
     let elapsedTime = 0;
     let killCount = 0;
@@ -660,6 +675,9 @@
     let spawnTimer = 0;
     let shootCooldown = 0;
     let pendingLevelUps = 0;
+    let bossTimer = BOSS_INTERVAL;
+
+    let damageFlash = 0;
 
     // Özel yetenekler
     let novaInterval = 0;
@@ -740,6 +758,18 @@
       playSound({ freqStart: 420, freqEnd: 760, duration: 0.22, volume: 0.28, type: "sine" });
     }
 
+    function triggerDamageFlash(intensity = 1) {
+      if (!damageFlashEl) return;
+      damageFlash = Math.min(0.45, damageFlash + 0.2 * intensity);
+      damageFlashEl.style.opacity = clamp(damageFlash * 1.6, 0, 0.7);
+    }
+
+    function updateDamageFlash(dt) {
+      if (!damageFlashEl) return;
+      damageFlash = Math.max(0, damageFlash - dt * 2.8);
+      damageFlashEl.style.opacity = clamp(damageFlash * 1.4, 0, 0.65);
+    }
+
     // UI
     const hudHp = document.getElementById("hud-hp");
     const hudLevel = document.getElementById("hud-level");
@@ -749,6 +779,7 @@
 
     const xpFill = document.getElementById("xp-fill");
     const xpText = document.getElementById("xp-text");
+    const damageFlashEl = document.getElementById("damage-flash");
 
     const startScreen = document.getElementById("start-screen");
     const gameoverScreen = document.getElementById("gameover-screen");
@@ -1090,7 +1121,7 @@
       scene = new THREE.Scene();
       // Gece koyu, gündüz gökyüzü daha açık mavi
       scene.background = new THREE.Color(0x0a1424);
-      scene.fog = new THREE.FogExp2(0x0a1424, 0.006); // daha az yoğun fog, yakın zemini aç
+      scene.fog = new THREE.FogExp2(0x0a1424, 0.0038); // daha az yoğun fog, yakın zemini aç
       
       dayColor = new THREE.Color(0x87ceeb);  // açık gökyüzü
       duskColor = new THREE.Color(0x172554);
@@ -1253,32 +1284,24 @@
 
         if (y < WATER_LEVEL - 3.2) {
           // suyun altında kalan en dip: koyu çamurlu toprak
-          r = 0.16; g = 0.20; b = 0.14;
+          r = 0.28; g = 0.20; b = 0.12;
         } else if (y < WATER_LEVEL + 0.8) {
           // su kenarı / sahil: açık kum rengi
-          r = 0.96; g = 0.86; b = 0.62;
+          r = 0.95; g = 0.82; b = 0.58;
         } else if (y < 4) {
-          // alt seviye çim – düz alanlar, biyoma göre renk
-          if (biome === "dirt") {
-            r = 0.42; g = 0.32; b = 0.22;
-          } else if (biome === "swamp") {
-            r = 0.25; g = 0.42; b = 0.22;
-          } else {
-            r = 0.14; g = 0.64; b = 0.24; // canlı yeşil
-          }
+          // alt seviye kum/çamur: sıcak toprak tonları
+          r = 0.78; g = 0.56; b = 0.32;
+          if (biome === "swamp") { r -= 0.06; g += 0.05; b += 0.02; }
+          if (biome === "evergreen") { r += 0.04; g += 0.03; }
         } else if (y < 10) {
-          // yamaç çimleri – biraz daha açık
-          if (biome === "evergreen") {
-            r = 0.18; g = 0.66; b = 0.30;
-          } else {
-            r = 0.22; g = 0.72; b = 0.32;
-          }
+          // yamaçlar: kızıl ve sarı kum karışımı
+          r = 0.86; g = 0.62; b = 0.36;
         } else if (y < 16) {
-          // kayalık gri tonlar
-          r = 0.44; g = 0.42; b = 0.40;
+          // kayalık ama sıcak kahverengiler
+          r = 0.66; g = 0.50; b = 0.36;
         } else {
-          // zirve: açık taş / hafif kar
-          r = 0.88; g = 0.90; b = 0.92;
+          // zirve: aydınlık taş / tozlu turuncu
+          r = 0.86; g = 0.78; b = 0.64;
         }
 
         // Hafif gölge / eğim katmanları
@@ -1300,10 +1323,11 @@
         b *= checkerMul;
 
         // Genel olarak aydınlat: gece bile zemini net görelim
-        const brighten = 1.2;
-        r = Math.min(r * brighten + 0.05, 1.0);
-        g = Math.min(g * brighten + 0.05, 1.0);
-        b = Math.min(b * brighten + 0.05, 1.0);
+        const warmNoise = (Perlin.noise(x * 0.04, z * 0.04) * 0.04);
+        const brighten = 1.28;
+        r = Math.min((r + warmNoise) * brighten + 0.06, 1.0);
+        g = Math.min((g + warmNoise * 0.6) * brighten + 0.05, 1.0);
+        b = Math.min((b + warmNoise * 0.4) * brighten + 0.04, 1.0);
     
         colors[i * 3 + 0] = r;
         colors[i * 3 + 1] = g;
@@ -1329,9 +1353,9 @@
       // Arazinin hatlarını takip eden tel kafes grid
       const gridGeo = new THREE.WireframeGeometry(groundGeo);
       const gridMat = new THREE.LineBasicMaterial({
-        color: 0x111827,
+        color: 0x2b1a0f,
         transparent: true,
-        opacity: 0.35,
+        opacity: 0.32,
       });
       const groundGrid = new THREE.LineSegments(gridGeo, gridMat);
       groundGrid.rotation.x = -Math.PI / 2;
@@ -1782,9 +1806,14 @@
     }
 
     // ENEMIES
-    function createEnemyMesh(type) {
+    function createEnemyMesh(type, variant = {}) {
       const g = new THREE.Group();
       let radius = 1.3;
+      const demonPalettes = [0x7f1d1d, 0x8a1f2d, 0x9f1d35, 0x9a3412, 0x7c2d12];
+      const accentPalettes = [0xffb347, 0xff6b6b, 0xf97316, 0xfacc15];
+      const baseColor = variant.color || demonPalettes[(Math.random() * demonPalettes.length) | 0];
+      const accentColor = variant.accent || accentPalettes[(Math.random() * accentPalettes.length) | 0];
+      const hornScale = variant.hornScale || 1;
 
       const shadowGeo = new THREE.CircleGeometry(1.8, 18);
       const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35 });
@@ -1796,9 +1825,9 @@
       if (type === 0) {
         // Walker - boynuzlu kırmızı iblis
         const skin = new THREE.MeshStandardMaterial({
-          color: 0x7f1d1d,
-          emissive: 0x991b1b,
-          emissiveIntensity: 0.5,
+          color: baseColor,
+          emissive: baseColor,
+          emissiveIntensity: 0.55,
           metalness: 0.25,
           roughness: 0.5,
         });
@@ -1814,7 +1843,7 @@
         head.castShadow = true;
         g.add(head);
 
-        const hornGeo = new THREE.ConeGeometry(0.18, 0.5, 6);
+        const hornGeo = new THREE.ConeGeometry(0.18 * hornScale, 0.5 + hornScale * 0.25, 6);
         const hornL = new THREE.Mesh(hornGeo, bone);
         hornL.position.set(-0.25, 3.3, 0.1);
         hornL.rotation.set(Math.PI * 0.1, 0.25, -0.4);
@@ -1823,8 +1852,25 @@
         hornR.rotation.y = -0.25;
         g.add(hornL, hornR);
 
+        const spineGeo = new THREE.ConeGeometry(0.12, 0.6, 6);
+        const spikeCount = variant.spikeCount || 0;
+        for (let s = 0; s < spikeCount; s++) {
+          const spike = new THREE.Mesh(spineGeo, bone);
+          spike.position.set((s - spikeCount / 2) * 0.3, 2.1 + Math.random() * 0.3, -0.4 - s * 0.05);
+          spike.rotation.x = -Math.PI / 2.3;
+          g.add(spike);
+        }
+
+        if (variant.hasTail) {
+          const tailGeo = new THREE.ConeGeometry(0.16, 1.1, 6);
+          const tail = new THREE.Mesh(tailGeo, skin);
+          tail.position.set(0, 1.2, -0.9);
+          tail.rotation.x = -Math.PI / 2.2;
+          g.add(tail);
+        }
+
         const eyeGeo = new THREE.BoxGeometry(0.14, 0.25, 0.1);
-        const eyeMat = new THREE.MeshStandardMaterial({ color: 0xffb347, emissive: 0xff7f50, emissiveIntensity: 1.2 });
+        const eyeMat = new THREE.MeshStandardMaterial({ color: accentColor, emissive: accentColor, emissiveIntensity: 1.2 });
         const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
         eyeL.position.set(-0.18, 2.78, 0.65);
         const eyeR = eyeL.clone();
@@ -1844,13 +1890,13 @@
       } else if (type === 1) {
         // Crawler - dört ayaklı iblis canavarı
         const hide = new THREE.MeshStandardMaterial({
-          color: 0x3f2a4f,
-          emissive: 0x5b21b6,
+          color: baseColor,
+          emissive: baseColor,
           emissiveIntensity: 0.6,
           roughness: 0.45,
           metalness: 0.25,
         });
-        const spineMat = new THREE.MeshStandardMaterial({ color: 0x93ffb8, emissive: 0x22c55e, emissiveIntensity: 1.1 });
+        const spineMat = new THREE.MeshStandardMaterial({ color: accentColor, emissive: accentColor, emissiveIntensity: 1.1 });
 
         const body = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 1.3), hide);
         body.position.y = 1.1;
@@ -1885,17 +1931,33 @@
           g.add(leg);
         });
 
+        if (variant.hasTail) {
+          const tailGeo = new THREE.CylinderGeometry(0.08, 0.26, 1.5, 6);
+          const tail = new THREE.Mesh(tailGeo, hide);
+          tail.position.set(0, 0.8, -1.2);
+          tail.rotation.x = -Math.PI / 3;
+          g.add(tail);
+        }
+
+        if (variant.weapon === "spear") {
+          const spearGeo = new THREE.CylinderGeometry(0.08, 0.12, 2.4, 6);
+          const spear = new THREE.Mesh(spearGeo, spineMat);
+          spear.position.set(0, 1.5, 1.4);
+          spear.rotation.x = Math.PI / 2.3;
+          g.add(spear);
+        }
+
         radius = 1.45;
       } else if (type === 2) {
         // Sentinel - havada süzülen gözlü büyücü
         const robeMat = new THREE.MeshStandardMaterial({
-          color: 0x2d1b4e,
-          emissive: 0x581c87,
+          color: baseColor,
+          emissive: baseColor,
           emissiveIntensity: 0.8,
           roughness: 0.38,
           metalness: 0.25,
         });
-        const eyeMat = new THREE.MeshStandardMaterial({ color: 0xffd166, emissive: 0xff9f1c, emissiveIntensity: 1.4 });
+        const eyeMat = new THREE.MeshStandardMaterial({ color: accentColor, emissive: accentColor, emissiveIntensity: 1.4 });
 
         const robe = new THREE.Mesh(new THREE.ConeGeometry(1.2, 2.4, 14), robeMat);
         robe.position.y = 1.6;
@@ -1912,22 +1974,32 @@
         eye.castShadow = true;
         g.add(eye);
 
-        const horns = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.6, 6), eyeMat.clone());
+        const horns = new THREE.Mesh(new THREE.ConeGeometry(0.18 * hornScale, 0.6 + hornScale * 0.2, 6), eyeMat.clone());
         horns.position.set(0, 3.5, 0.2);
         horns.rotation.x = Math.PI;
         g.add(horns);
+
+        if (variant.spikeCount) {
+          const orbMat = new THREE.MeshStandardMaterial({ color: accentColor, emissive: accentColor, emissiveIntensity: 1.25 });
+          for (let i = 0; i < variant.spikeCount; i++) {
+            const ang = (i / variant.spikeCount) * Math.PI * 2;
+            const orb = new THREE.Mesh(new THREE.DodecahedronGeometry(0.3, 0), orbMat);
+            orb.position.set(Math.cos(ang) * 1.4, 2.6 + Math.sin(elapsedTime + i) * 0.2, Math.sin(ang) * 1.2);
+            g.add(orb);
+          }
+        }
 
         radius = 1.2;
       } else if (type === 4) {
         // Bulky tank - zırhlı dev iblis
         const armor = new THREE.MeshStandardMaterial({
-          color: 0x4a0f1f,
-          emissive: 0x7f1d1d,
+          color: baseColor,
+          emissive: baseColor,
           emissiveIntensity: 0.6,
           roughness: 0.32,
           metalness: 0.6,
         });
-        const tuskMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.2, metalness: 0.4 });
+        const tuskMat = new THREE.MeshStandardMaterial({ color: accentColor, roughness: 0.2, metalness: 0.4 });
 
         const shell = new THREE.Mesh(new THREE.CapsuleGeometry(1.1, 2, 10, 16), armor);
         shell.position.y = 1.7;
@@ -1944,7 +2016,7 @@
         jaw.castShadow = true;
         g.add(jaw);
 
-        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 12), new THREE.MeshStandardMaterial({ color: 0xffb347, emissive: 0xff6b6b, emissiveIntensity: 1.3 }));
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 12), new THREE.MeshStandardMaterial({ color: accentColor, emissive: accentColor, emissiveIntensity: 1.3 }));
         eye.position.set(0, 2.1, 0.9);
         eye.castShadow = true;
         g.add(eye);
@@ -1961,8 +2033,8 @@
       } else {
         // Hopper - çevik imp
         const impMat = new THREE.MeshStandardMaterial({
-          color: 0x5b0f2e,
-          emissive: 0x9f1239,
+          color: baseColor,
+          emissive: baseColor,
           emissiveIntensity: 0.7,
           roughness: 0.36,
           metalness: 0.4,
@@ -1972,7 +2044,7 @@
         imp.castShadow = true;
         g.add(imp);
 
-        const grin = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.2, 0.1), new THREE.MeshStandardMaterial({ color: 0xffd166, emissive: 0xff6b6b, emissiveIntensity: 1.0 }));
+        const grin = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.2, 0.1), new THREE.MeshStandardMaterial({ color: accentColor, emissive: accentColor, emissiveIntensity: 1.0 }));
         grin.position.set(0, 1.05, 0.75);
         g.add(grin);
 
@@ -1992,8 +2064,102 @@
         radius = 1.0;
       }
 
+      const scale = variant.scale || 1;
+      g.scale.setScalar(scale);
+      radius *= scale;
       flatShadow.scale.setScalar(radius * 1.1);
 
+      g.castShadow = true;
+      return { mesh: g, radius };
+    }
+
+    function randomBossVariant() {
+      const palettes = [0x5b0f2e, 0x7f1d1d, 0x4c1d95, 0x9a3412];
+      const accents = [0xf97316, 0xfbbf24, 0xfb7185, 0x7dd3fc];
+      const behaviors = ["dash", "ranged", "summoner"];
+      return {
+        color: palettes[(Math.random() * palettes.length) | 0],
+        accent: accents[(Math.random() * accents.length) | 0],
+        spikeCount: 4 + ((Math.random() * 4) | 0),
+        hornScale: 1.3 + Math.random() * 0.6,
+        scale: 2.2 + Math.random() * 0.6,
+        behavior: behaviors[(Math.random() * behaviors.length) | 0],
+      };
+    }
+
+    function createBossMesh(variant) {
+      const g = new THREE.Group();
+      let radius = 3.2;
+      const shadowGeo = new THREE.CircleGeometry(3.4, 26);
+      const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.38 });
+      const flatShadow = new THREE.Mesh(shadowGeo, shadowMat);
+      flatShadow.rotation.x = -Math.PI / 2;
+      flatShadow.position.y = -0.05;
+      g.add(flatShadow);
+
+      const skin = new THREE.MeshStandardMaterial({
+        color: variant.color,
+        emissive: variant.color,
+        emissiveIntensity: 0.75,
+        roughness: 0.36,
+        metalness: 0.45,
+      });
+      const accent = new THREE.MeshStandardMaterial({ color: variant.accent, emissive: variant.accent, emissiveIntensity: 1.1, roughness: 0.35, metalness: 0.5 });
+
+      const torso = new THREE.Mesh(new THREE.CapsuleGeometry(1.6, 3.2, 14, 20), skin);
+      torso.position.y = 2.8;
+      torso.castShadow = true;
+      g.add(torso);
+
+      const head = new THREE.Mesh(new THREE.DodecahedronGeometry(1.2, 0), skin);
+      head.position.y = 4.5;
+      head.castShadow = true;
+      g.add(head);
+
+      const hornGeo = new THREE.ConeGeometry(0.35 * variant.hornScale, 1.4 * variant.hornScale, 10);
+      const hornL = new THREE.Mesh(hornGeo, accent);
+      hornL.position.set(-0.8, 5.2, 0.25);
+      hornL.rotation.set(Math.PI * 0.9, 0.3, -0.6);
+      const hornR = hornL.clone();
+      hornR.position.x = 0.8;
+      hornR.rotation.y = -0.3;
+      g.add(hornL, hornR);
+
+      const jaw = new THREE.Mesh(new THREE.BoxGeometry(2, 0.8, 1.6), skin);
+      jaw.position.set(0, 3.2, 1.1);
+      jaw.castShadow = true;
+      g.add(jaw);
+
+      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.6, 14, 14), accent);
+      eye.position.set(0, 4.3, 1.1);
+      eye.castShadow = true;
+      g.add(eye);
+
+      const spikeGeo = new THREE.ConeGeometry(0.18, 0.9, 8);
+      for (let s = 0; s < variant.spikeCount; s++) {
+        const spike = new THREE.Mesh(spikeGeo, accent);
+        spike.position.set((s - variant.spikeCount / 2) * 0.55, 2.4 + Math.random() * 0.8, -0.6 - s * 0.06);
+        spike.rotation.x = -Math.PI / 2.2;
+        g.add(spike);
+      }
+
+      const tail = new THREE.Mesh(new THREE.ConeGeometry(0.28, 1.6, 8), skin);
+      tail.position.set(0, 1.5, -1.8);
+      tail.rotation.x = -Math.PI / 2.4;
+      g.add(tail);
+
+      const shoulder = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.8, 1.6), accent);
+      shoulder.position.set(0, 3.6, 0);
+      shoulder.castShadow = true;
+      g.add(shoulder);
+
+      const light = new THREE.PointLight(variant.accent, 1.6, 36);
+      light.position.set(0, 5.6, 0);
+      g.add(light);
+
+      g.scale.setScalar(variant.scale);
+      radius *= variant.scale;
+      flatShadow.scale.setScalar(variant.scale * 1.6);
       g.castShadow = true;
       return { mesh: g, radius };
     }
@@ -2051,6 +2217,7 @@
       spawnTimer = 0.9;
       shootCooldown = 0;
       pendingLevelUps = 0;
+      bossTimer = BOSS_INTERVAL;
       cameraFollowSmooth = 0.16;
       // Güneş tepede başlasın, ortam direkt aydınlık gelsin
       dayTime = DAY_LENGTH * 0.3;
@@ -2064,6 +2231,22 @@
     }
 
     // SPAWNS
+    function randomEnemyVariant(type) {
+      const palettes = [0x7f1d1d, 0x8a1f2d, 0x9a3412, 0x6b21a8, 0x7c2d12];
+      const accents = [0xffb347, 0xf97316, 0xfacc15, 0x9ef78a, 0x38bdf8];
+      const behaviorPool = ["", "charger", "spearman", "zigzag"];
+      return {
+        color: palettes[(Math.random() * palettes.length) | 0],
+        accent: accents[(Math.random() * accents.length) | 0],
+        hasTail: Math.random() < 0.65,
+        spikeCount: (Math.random() < 0.45 ? 2 + (Math.random() * 3) | 0 : 0),
+        hornScale: 0.85 + Math.random() * 0.5,
+        scale: 0.95 + Math.random() * 0.25,
+        weapon: Math.random() < 0.35 ? "spear" : null,
+        behavior: behaviorPool[(Math.random() * behaviorPool.length) | 0]
+      };
+    }
+
     function spawnEnemy() {
       const angle = Math.random() * Math.PI * 2;
       const dist = 40 + Math.random() * 65;
@@ -2076,7 +2259,8 @@
       const difficulty = 1 + level * 0.08 + elapsedTime / 90;
       let t = Math.floor(Math.random() * 4);
       if (difficulty > 3.2 && Math.random() < 0.28) t = 4;
-      const { mesh, radius } = createEnemyMesh(t);
+      const variant = randomEnemyVariant(t);
+      const { mesh, radius } = createEnemyMesh(t, variant);
 
       const groundY = terrainHeight(x, z);
       const baseY = t === 2 ? groundY + 1.9 : groundY + 1.4;
@@ -2122,7 +2306,53 @@
         hopTimer: 0,
         hitFlash: 0,
         slowTimer: 0,
-        slowFactor: 1
+        slowFactor: 1,
+        behavior: variant.behavior,
+        specialTimer: 0.6 + Math.random() * 1.2,
+        isBoss: false
+      });
+    }
+
+    function spawnBoss() {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 55 + Math.random() * 45;
+      let x = player.x + Math.cos(angle) * dist;
+      let z = player.z + Math.sin(angle) * dist;
+
+      x = clamp(x, -WORLD_SIZE / 2 + 12, WORLD_SIZE / 2 - 12);
+      z = clamp(z, -WORLD_SIZE / 2 + 12, WORLD_SIZE / 2 - 12);
+
+      const variant = randomBossVariant();
+      const { mesh, radius } = createBossMesh(variant);
+      const groundY = terrainHeight(x, z);
+      mesh.position.set(x, groundY + 3, z);
+      scene.add(mesh);
+
+      const timeFactor = 1 + elapsedTime / 90;
+      const levelFactor = 1 + (level - 1) * 0.12;
+      const baseHp = 520 * timeFactor * levelFactor;
+      const baseSpeed = 7.5;
+      const damage = 38 * levelFactor;
+
+      enemies.push({
+        x,
+        z,
+        radius,
+        speed: baseSpeed,
+        hp: baseHp,
+        maxHp: baseHp,
+        damage,
+        type: 5,
+        mesh,
+        fireCooldown: 1.5,
+        hopTimer: 0,
+        hitFlash: 0,
+        slowTimer: 0,
+        slowFactor: 1,
+        behavior: variant.behavior,
+        specialTimer: 3 + Math.random() * 2,
+        isBoss: true,
+        bossVariant: variant
       });
     }
 
@@ -2189,14 +2419,14 @@
       if (fromPlayer) sShoot();
     }
 
-    function spawnXpOrb(x, z) {
+    function spawnXpOrb(x, z, value = null) {
       const geo = new THREE.OctahedronGeometry(0.6, 0);
       const mat = new THREE.MeshStandardMaterial({
-        color: 0xf8d66d,
-        emissive: 0xf6c947,
-        emissiveIntensity: 1.05,
-        roughness: 0.22,
-        metalness: 0.4,
+        color: 0x6bf7ff,
+        emissive: 0x38e0ff,
+        emissiveIntensity: 1.6,
+        roughness: 0.18,
+        metalness: 0.32,
         flatShading: true,
       });
       const mesh = new THREE.Mesh(geo, mat);
@@ -2209,23 +2439,39 @@
         x,
         z,
         radius: 0.65,
-        value: 1 + Math.random(),
+        value: value != null ? value : 1 + Math.random(),
         mesh,
       });
     }
 
     function spawnHeart(x, z) {
-      const geo = new THREE.SphereGeometry(0.45, 14, 14);
+      if (!heartGeometry) {
+        const shape = new THREE.Shape();
+        shape.moveTo(0, 0.6);
+        shape.bezierCurveTo(0, 0.6, -0.6, 0.5, -0.6, 0);
+        shape.bezierCurveTo(-0.6, -0.6, 0, -0.95, 0, -1.25);
+        shape.bezierCurveTo(0, -0.95, 0.6, -0.6, 0.6, 0);
+        shape.bezierCurveTo(0.6, 0.5, 0, 0.6, 0, 0.6);
+
+        heartGeometry = new THREE.ExtrudeGeometry(shape, { depth: 0.35, bevelEnabled: false, steps: 1 });
+        heartGeometry.rotateX(Math.PI);
+        heartGeometry.translate(0, -0.1, 0);
+        heartGeometry.computeVertexNormals();
+      }
+
       const mat = new THREE.MeshStandardMaterial({
         color: 0xef4444,
-        emissive: 0xef4444,
-        emissiveIntensity: 0.9,
-        roughness: 0.35,
-        metalness: 0.3
+        emissive: 0xff4d6d,
+        emissiveIntensity: 1.2,
+        roughness: 0.28,
+        metalness: 0.2,
+        flatShading: true
       });
-      const mesh = new THREE.Mesh(geo, mat);
+      const mesh = new THREE.Mesh(heartGeometry, mat);
       const groundY = terrainHeight(x, z);
       mesh.position.set(x, groundY + 0.9, z);
+      mesh.scale.setScalar(0.9 + Math.random() * 0.12);
+      mesh.rotation.y = Math.random() * Math.PI * 2;
       mesh.castShadow = true;
       scene.add(mesh);
 
@@ -2233,18 +2479,51 @@
         x,
         z,
         radius: 0.6,
-        heal: 28,
+        heal: 30,
         mesh,
         baseY: groundY + 0.9,
         offset: Math.random() * Math.PI * 2
       });
     }
 
+    function applyPlayerDamage(amount, shake = 0.12) {
+      if (amount <= 0 || gameState !== "playing") return;
+      let dmg = amount;
+      if (player.damageReduction) dmg *= (1 - player.damageReduction);
+      player.hp -= dmg;
+      triggerDamageFlash(clamp(dmg / 40, 0.45, 1.2));
+      cameraShake = Math.max(cameraShake, shake);
+      sHit();
+      if (player.hp <= 0) {
+        player.hp = 0;
+        onGameOver();
+      }
+    }
+
+    function spawnHealBurst(x, z) {
+      const ringGeo = new THREE.RingGeometry(0.25, 1.4, 32);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0x22c55e, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(x, terrainHeight(x, z) + 0.1, z);
+      scene.add(ring);
+
+      effects.push({ mesh: ring, life: 0.5, maxLife: 0.5, type: "heal" });
+    }
+
     function killEnemy(index) {
       const e = enemies[index];
       spawnXpOrb(e.x, e.z);
+      if (e.isBoss) {
+        for (let n = 0; n < 5; n++) {
+          const ox = (Math.random() - 0.5) * 4;
+          const oz = (Math.random() - 0.5) * 4;
+          spawnXpOrb(e.x + ox, e.z + oz, 2 + Math.random() * 1.6);
+        }
+      }
       // Küçük ihtimalle can kalbi dropları
-      if (Math.random() < 0.16) {
+      const heartChance = e.isBoss ? 0.45 : 0.06;
+      if (Math.random() < heartChance) {
         spawnHeart(e.x, e.z);
       }
       scene.remove(e.mesh);
@@ -2409,49 +2688,123 @@
         let vx = dir.x * e.speed * slowMul;
         let vz = dir.z * e.speed * slowMul;
 
-        if (e.type === 0) {
-          const side = normalize2(-dir.z, dir.x);
-          const sway = Math.sin(elapsedTime * 4 + i) * 0.6;
-          vx += side.x * e.speed * 0.4 * sway;
-          vz += side.z * e.speed * 0.4 * sway;
-        } else if (e.type === 1) {
-          vx *= 1.6;
-          vz *= 1.6;
-        } else if (e.type === 2) {
-          if (dist > 22) {
-            vx *= 1.2;
-            vz *= 1.2;
-          } else if (dist < 12) {
-            vx *= -0.8;
-            vz *= -0.8;
-          } else {
-            vx = 0;
-            vz = 0;
-          }
+        if (e.isBoss) {
+          vx *= 0.9;
+          vz *= 0.9;
+          e.specialTimer -= dt;
           e.fireCooldown -= dt;
-          if (e.fireCooldown <= 0 && dist < 50) {
-            spawnBullet(dx, dz, false, { x: e.x, z: e.z }, 28);
-            e.fireCooldown = 2.2 + Math.random() * 1.4;
+
+          if (e.behavior === "dash") {
+            if (e.specialTimer <= 0) {
+              const burst = normalize2(dx, dz);
+              vx = burst.x * (e.speed * 3.4);
+              vz = burst.z * (e.speed * 3.4);
+              e.specialTimer = 3.5 + Math.random() * 2;
+            }
+          } else if (e.behavior === "ranged") {
+            if (dist < 14) { vx *= -0.6; vz *= -0.6; }
+            else if (dist > 26) { vx *= 1.6; vz *= 1.6; }
+            if (e.fireCooldown <= 0) {
+              const shots = 6;
+              for (let s = 0; s < shots; s++) {
+                const ang = Math.atan2(dz, dx) + (s / shots) * Math.PI * 2;
+                spawnBullet(Math.cos(ang), Math.sin(ang), false, { x: e.x, z: e.z }, 22, null, 0, {
+                  color: 0xfa8072,
+                  emissive: 0xfa8072,
+                  emissiveIntensity: 1.3,
+                  hitRadius: 0.38
+                });
+              }
+              e.fireCooldown = 2.4 + Math.random() * 1.3;
+            }
+          } else if (e.behavior === "summoner") {
+            if (e.specialTimer <= 0) {
+              spawnEnemy();
+              if (Math.random() < 0.6) spawnEnemy();
+              e.specialTimer = 5 + Math.random() * 3;
+            }
+            const side = normalize2(-dir.z, dir.x);
+            vx += side.x * e.speed * 0.6 * Math.sin(elapsedTime * 2 + i);
+            vz += side.z * e.speed * 0.6 * Math.sin(elapsedTime * 2 + i);
           }
-        } else if (e.type === 3) {
-          e.hopTimer -= dt;
-          if (e.hopTimer <= 0) {
-            const hopDir = normalize2(dx, dz);
-            vx = hopDir.x * (e.speed * 2.4);
-            vz = hopDir.z * (e.speed * 2.4);
-            e.hopTimer = 1.2 + Math.random();
+        } else {
+          if (e.type === 0) {
+            const side = normalize2(-dir.z, dir.x);
+            const sway = Math.sin(elapsedTime * 4 + i) * 0.6;
+            vx += side.x * e.speed * 0.4 * sway;
+            vz += side.z * e.speed * 0.4 * sway;
+          } else if (e.type === 1) {
+            vx *= 1.6;
+            vz *= 1.6;
+          } else if (e.type === 2) {
+            if (dist > 22) {
+              vx *= 1.2;
+              vz *= 1.2;
+            } else if (dist < 12) {
+              vx *= -0.8;
+              vz *= -0.8;
+            } else {
+              vx = 0;
+              vz = 0;
+            }
+            e.fireCooldown -= dt;
+            if (e.fireCooldown <= 0 && dist < 50) {
+              spawnBullet(dx, dz, false, { x: e.x, z: e.z }, 28);
+              e.fireCooldown = 2.2 + Math.random() * 1.4;
+            }
+          } else if (e.type === 3) {
+            e.hopTimer -= dt;
+            if (e.hopTimer <= 0) {
+              const hopDir = normalize2(dx, dz);
+              vx = hopDir.x * (e.speed * 2.4);
+              vz = hopDir.z * (e.speed * 2.4);
+              e.hopTimer = 1.2 + Math.random();
+            }
+          } else if (e.type === 4) {
+            // Tank: kısa süreli hızlanma, çarpışınca ağır hasar
+            e.fireCooldown -= dt;
+            if (e.fireCooldown <= 0) {
+              const burst = normalize2(dx, dz);
+              vx = burst.x * (e.speed * 2.2);
+              vz = burst.z * (e.speed * 2.2);
+              e.fireCooldown = 2 + Math.random();
+            } else {
+              vx *= 0.75;
+              vz *= 0.75;
+            }
           }
-        } else if (e.type === 4) {
-          // Tank: kısa süreli hızlanma, çarpışınca ağır hasar
-          e.fireCooldown -= dt;
-          if (e.fireCooldown <= 0) {
-            const burst = normalize2(dx, dz);
-            vx = burst.x * (e.speed * 2.2);
-            vz = burst.z * (e.speed * 2.2);
-            e.fireCooldown = 2 + Math.random();
-          } else {
-            vx *= 0.75;
-            vz *= 0.75;
+
+          if (e.behavior === "charger") {
+            e.specialTimer -= dt;
+            if (e.specialTimer <= 0 && dist > 5) {
+              const burst = normalize2(dx, dz);
+              vx = burst.x * (e.speed * 3.2);
+              vz = burst.z * (e.speed * 3.2);
+              e.specialTimer = 2.4 + Math.random() * 1.6;
+            }
+          } else if (e.behavior === "spearman") {
+            e.fireCooldown -= dt;
+            if (e.fireCooldown <= 0 && dist < 26) {
+              spawnBullet(dx, dz, false, { x: e.x, z: e.z }, 24, null, 0, {
+                color: 0xfef08a,
+                emissive: 0xf59e0b,
+                emissiveIntensity: 1.2,
+                hitRadius: 0.3
+              });
+              e.fireCooldown = 2.6 + Math.random() * 1.4;
+            }
+            if (dist < 9) {
+              vx *= -0.6; vz *= -0.6;
+            } else if (dist < 16) {
+              vx *= 0.65; vz *= 0.65;
+            } else {
+              vx *= 1.05; vz *= 1.05;
+            }
+          } else if (e.behavior === "zigzag") {
+            const side = normalize2(-dir.z, dir.x);
+            const sway = Math.sin(elapsedTime * 6 + i) * 0.8;
+            vx += side.x * e.speed * 0.8 * sway;
+            vz += side.z * e.speed * 0.8 * sway;
           }
         }
 
@@ -2462,21 +2815,13 @@
         e.z = clamp(e.z, -WORLD_SIZE / 2 + 3, WORLD_SIZE / 2 - 3);
 
         const groundY = terrainHeight(e.x, e.z);
-        const baseY = e.type === 2 ? groundY + 1.8 : (e.type === 4 ? groundY + 1.6 : groundY + 1.4);
+        const baseY = e.isBoss ? groundY + 3 : (e.type === 2 ? groundY + 1.8 : (e.type === 4 ? groundY + 1.6 : groundY + 1.4));
         e.mesh.position.set(e.x, baseY, e.z);
 
         const dPlayer = Math.hypot(player.x - e.x, player.z - e.z);
         if (dPlayer < player.radius + e.radius) {
-          let dmg = e.damage * dt;
-          if (player.damageReduction) dmg *= (1 - player.damageReduction);
-          player.hp -= dmg;
-          if (dmg > 0) cameraShake = Math.max(cameraShake, 0.1);
-          if (player.hp <= 0) {
-            player.hp = 0;
-            sHit();
-            onGameOver();
-            return;
-          }
+          const shake = e.isBoss ? 0.2 : 0.1;
+          applyPlayerDamage(e.damage * dt, shake);
         }
       }
     }
@@ -2567,17 +2912,9 @@
         } else {
           const d = Math.hypot(player.x - b.x, player.z - b.z);
           if (d < player.radius + b.radius) {
-            let dmg = 16;
-            if (player.damageReduction) dmg *= (1 - player.damageReduction);
-            player.hp -= dmg;
-            cameraShake = Math.max(cameraShake, 0.17);
-            sHit();
+            applyPlayerDamage(16, 0.17);
             scene.remove(b.mesh);
             bullets.splice(i, 1);
-            if (player.hp <= 0) {
-              player.hp = 0;
-              onGameOver();
-            }
           }
         }
       }
@@ -2629,6 +2966,7 @@
         if (dist < player.radius + h.radius) {
           player.hp = clamp(player.hp + h.heal, 0, player.maxHp);
           sHeal();
+          spawnHealBurst(h.x, h.z);
           scene.remove(h.mesh);
           hearts.splice(i, 1);
         }
@@ -2830,7 +3168,7 @@
       const bgColor = nightColor.clone().lerp(skyBlend, mix + 0.15);
       scene.background = bgColor;
       scene.fog.color.copy(bgColor.clone().lerp(duskColor, 0.25));
-      scene.fog.density = 0.0055 + (1 - mix) * 0.006 + weather.intensity * 0.0035;
+      scene.fog.density = 0.0032 + (1 - mix) * 0.004 + weather.intensity * 0.0025;
 
       if (skyDome) {
         skyDome.material.color = bgColor.clone().lerp(duskColor, 0.2);
@@ -3100,6 +3438,10 @@
           const s = 1 + t * 0.8;
           eff.mesh.scale.set(s, s, s);
           eff.mesh.material.opacity = 0.9 * (1 - t);
+        } else if (eff.type === "heal") {
+          const s = 0.6 + t * 1.6;
+          eff.mesh.scale.set(s, s, s);
+          eff.mesh.material.opacity = 0.8 * (1 - t);
         }
       }
     }
@@ -3291,6 +3633,12 @@
           spawnTimer = spawnInterval;
         }
 
+        bossTimer -= dt;
+        if (bossTimer <= 0) {
+          spawnBoss();
+          bossTimer = BOSS_INTERVAL;
+        }
+
         updatePlayer(dt);
         updateEnemies(dt);
         updateBullets(dt);
@@ -3313,6 +3661,7 @@
       updateCamera(dt);
       updateUI();
       updateEffects(dt);
+      updateDamageFlash(dt);
       renderer.render(scene, camera);
     }
 
