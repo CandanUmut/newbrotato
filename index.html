@@ -308,12 +308,22 @@
     /* Hint */
     #hint {
       position: absolute;
-      left: 8px;
-      bottom: 12px;
+      left: 12px;
+      bottom: 16px;
       font-size: 11px;
       color: var(--text-soft);
-      pointer-events: none;
+      pointer-events: auto;
       text-shadow: 0 0 4px #000;
+      background: rgba(15, 23, 42, 0.7);
+      padding: 6px 10px;
+      border-radius: 12px;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      opacity: 0;
+      transition: opacity 0.35s ease;
+    }
+
+    #hint.visible {
+      opacity: 1;
     }
 
     /* Joystick */
@@ -357,8 +367,8 @@
     /* Mini-map + dodge HUD */
     #left-panel {
       position: absolute;
-      left: 12px;
-      bottom: 14px;
+      right: 18px;
+      bottom: 18px;
       width: 180px;
       padding: 10px;
       border-radius: 16px;
@@ -408,23 +418,9 @@
       box-shadow: 0 0 10px rgba(34, 197, 94, 0.8);
     }
 
-    #jump-overlay {
-      position: absolute;
-      left: 12px;
-      bottom: 12px;
-      width: 26%;
-      height: 26%;
-      pointer-events: auto;
-      touch-action: none;
-      background: radial-gradient(circle at top left, rgba(56, 189, 248, 0.08), transparent 65%);
-      border: 1px dashed rgba(148, 163, 184, 0.25);
-      border-radius: 18px;
-      box-shadow: inset 0 0 22px rgba(0, 0, 0, 0.28);
-    }
-
     #dodge-indicator {
       position: absolute;
-      right: 26px;
+      right: 220px;
       bottom: 22px;
       width: 64px;
       height: 64px;
@@ -450,6 +446,17 @@
 
     #dodge-indicator span {
       pointer-events: none;
+    }
+
+    @media (max-width: 900px) {
+      #left-panel {
+        bottom: 190px;
+        right: 14px;
+      }
+      #dodge-indicator {
+        right: 22px;
+        bottom: 28px;
+      }
     }
 
     /* Boss bar */
@@ -573,7 +580,7 @@
     <!-- Hint -->
     <div id="hint">
       PC: WASD / ok tuşları, fareyi sürükleyerek etrafına bak · Space / Shift: kaçın (cooldown'lu dash/jump)<br/>
-      Mobil: sağ taraftaki joystick, sol alttaki alana çift dokun ya da sağdaki küçük simgeye dokunarak dash kullan.
+      Mobil: sağ taraftaki joystick ile hareket et, kaçınma otomatik cooldown ile devrede.
     </div>
 
   </div>
@@ -631,9 +638,6 @@
         <div id="upgrade-options" class="upgrade-grid"></div>
       </div>
     </div>
-
-  <!-- Touch helpers -->
-  <div id="jump-overlay" aria-hidden="true"></div>
 
   <!-- Left panel mini-map -->
   <div id="left-panel">
@@ -764,7 +768,7 @@
       x: 0,
       z: 0,
       y: 2,
-      radius: 1.4,
+      radius: 1.6,
       speed: 18,
       hp: 100,
       maxHp: 100,
@@ -818,7 +822,9 @@
     let damageFlash = 0;
     let playerHitJiggle = 0;
     let minimapTimer = 0;
-    let doubleTapTimer = 0;
+    let autoDodgeTimer = 0;
+    let showTutorial = true;
+    let tutorialTimer = 12;
 
     // Özel yetenekler
     let novaInterval = 0;
@@ -931,10 +937,10 @@
     const btnStart = document.getElementById("btn-start");
     const btnRestart = document.getElementById("btn-restart");
     const btnQuit = document.getElementById("btn-quit");
-    const jumpOverlay = document.getElementById("jump-overlay");
     const minimapCanvas = document.getElementById("minimap");
     const minimapCtx = minimapCanvas.getContext("2d");
     const dodgeIndicator = document.getElementById("dodge-indicator");
+    const tutorialHint = document.getElementById("hint");
     const bossBar = document.getElementById("boss-bar");
     const bossName = document.getElementById("boss-name");
     const bossHpText = document.getElementById("boss-hp-text");
@@ -1296,12 +1302,12 @@
     function initThree() {
       scene = new THREE.Scene();
       // Gece koyu, gündüz gökyüzü daha açık mavi
-      scene.background = new THREE.Color(0x0a1424);
-      scene.fog = new THREE.FogExp2(0x0a1424, 0.0038); // daha az yoğun fog, yakın zemini aç
-      
-      dayColor = new THREE.Color(0x87ceeb);  // açık gökyüzü
-      duskColor = new THREE.Color(0x172554);
-      nightColor = new THREE.Color(0x020617);
+      scene.background = new THREE.Color(0x0d1626);
+      scene.fog = new THREE.FogExp2(0x0d1626, 0.0032); // daha az yoğun fog, yakın zemini aç
+
+      dayColor = new THREE.Color(0xf5e5c8);  // sıcak çöl gökyüzü
+      duskColor = new THREE.Color(0x1f3156);
+      nightColor = new THREE.Color(0x0b1224);
 
 
       camera = new THREE.PerspectiveCamera(
@@ -1321,10 +1327,10 @@
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       document.getElementById("game-root").appendChild(renderer.domElement);
 
-      ambientLight = new THREE.AmbientLight(0xffffff, 0.95);
+      ambientLight = new THREE.AmbientLight(0xfff4d6, 0.98);
       scene.add(ambientLight);
 
-      sunLight = new THREE.DirectionalLight(0xffffff, 1.35);
+      sunLight = new THREE.DirectionalLight(0xffe0a0, 1.4);
       sunLight.position.set(60, 90, 40);
       sunLight.castShadow = true;
       sunLight.shadow.mapSize.set(1024, 1024);
@@ -1515,9 +1521,10 @@
       groundGeo.computeVertexNormals();
     
       groundMaterial = new THREE.MeshStandardMaterial({
+        color: 0x8b5a2b,
         vertexColors: true,
-        metalness: 0.02,
-        roughness: 0.94,
+        metalness: 0.0,
+        roughness: 0.98,
         flatShading: true, // low-poly / minecraft hissi için daha net yüzeyler
         transparent: false,
         opacity: 1,
@@ -1531,9 +1538,9 @@
       // Arazinin hatlarını takip eden tel kafes grid
       const gridGeo = new THREE.WireframeGeometry(groundGeo);
       const gridMat = new THREE.LineBasicMaterial({
-        color: 0x3d2a16,
+        color: 0x9a6b3c,
         transparent: true,
-        opacity: 0.22,
+        opacity: 0.12,
       });
       const groundGrid = new THREE.LineSegments(gridGeo, gridMat);
       groundGrid.rotation.x = -Math.PI / 2;
@@ -1880,6 +1887,20 @@
       core.userData.pulse = true;
       group.add(core);
 
+      const chestGem = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.32, 0),
+        new THREE.MeshStandardMaterial({
+          color: 0x7dd3fc,
+          emissive: 0x7dd3fc,
+          emissiveIntensity: 1.35,
+          roughness: 0.18,
+          metalness: 0.15,
+        })
+      );
+      chestGem.position.set(0, 0.9, 0.95);
+      chestGem.userData.pulse = true;
+      group.add(chestGem);
+
       // Zırh çizgisi
       const chestPlateGeo = new THREE.BoxGeometry(1.4, 0.35, 0.7);
       const chestPlate = new THREE.Mesh(chestPlateGeo, suitMat);
@@ -1964,6 +1985,8 @@
       const light = new THREE.PointLight(0x38bdf8, 2.1, 26);
       light.position.set(0, 3, 0);
       group.add(light);
+
+      group.scale.set(1.2, 1.2, 1.2);
 
       const groundY = terrainHeight(0, 0);
       group.position.set(0, groundY + 2.2, 0);
@@ -2469,7 +2492,10 @@
       cameraShake = 0;
       playerHitJiggle = 0;
       minimapTimer = 0;
-      doubleTapTimer = 0;
+      autoDodgeTimer = player.dodgeCooldownMax;
+      showTutorial = true;
+      tutorialTimer = 12;
+      if (tutorialHint) tutorialHint.classList.add("visible");
       novaInterval = 0;
       novaTimer = 0;
 
@@ -2478,10 +2504,12 @@
 
     // SPAWNS
     function difficultyMultiplier() {
-      const timeRamp = 1 + elapsedTime * 0.008;
-      const levelRamp = 1 + (level - 1) * 0.1;
-      const hardcoreRamp = Math.pow(1 + elapsedTime / 320, 1.18);
-      return timeRamp * levelRamp * hardcoreRamp;
+      const minutes = elapsedTime / 60;
+      const earlyEase = 0.85 + minutes * 0.55;
+      const smoothRamp = 1 + Math.pow(minutes, 1.1) * 0.35;
+      const levelRamp = 1 + (level - 1) * 0.08;
+      const lateRamp = 1 + Math.max(0, minutes - 1.5) * 0.4;
+      return earlyEase * smoothRamp * levelRamp * lateRamp;
     }
 
     function randomEnemyVariant(type) {
@@ -2533,34 +2561,34 @@
       mesh.position.set(x, baseY, z);
       scene.add(mesh);
 
-      const hpScale = 1 + difficulty * 0.55;
-      const damageScale = 1 + difficulty * 0.35;
-      const speedScale = 1 + Math.min(difficulty * 0.12, 1.05);
+      const hpScale = 1 + difficulty * 0.42;
+      const damageScale = 1 + difficulty * 0.28;
+      const speedScale = 1 + Math.min(difficulty * 0.08, 0.9);
 
-      let baseHp = 22 * hpScale;
-      let baseSpeed = (9 + level * 0.12) * speedScale;
-      let damage = 10 * damageScale;
+      let baseHp = 20 * hpScale;
+      let baseSpeed = (8.4 + level * 0.1) * speedScale;
+      let damage = 9 * damageScale;
 
       if (t === 1) {
-        baseHp = 28 * hpScale;
-        baseSpeed = 11.5 * speedScale;
-        damage = 12 * damageScale;
-      } else if (t === 2) {
-        baseHp = 36 * hpScale;
-        baseSpeed = 7.2 * speedScale;
-        damage = 15 * damageScale;
-      } else if (t === 3) {
-        baseHp = 20 * hpScale;
-        baseSpeed = 15 * speedScale;
+        baseHp = 26 * hpScale;
+        baseSpeed = 10.5 * speedScale;
         damage = 11 * damageScale;
+      } else if (t === 2) {
+        baseHp = 34 * hpScale;
+        baseSpeed = 6.8 * speedScale;
+        damage = 14 * damageScale;
+      } else if (t === 3) {
+        baseHp = 18 * hpScale;
+        baseSpeed = 14 * speedScale;
+        damage = 10 * damageScale;
       } else if (t === 4) {
-        baseHp = 90 * hpScale;
-        baseSpeed = 8 * speedScale;
-        damage = 20 * damageScale;
+        baseHp = 80 * hpScale;
+        baseSpeed = 7.6 * speedScale;
+        damage = 18 * damageScale;
       } else if (t === 6) {
-        baseHp = 180 * hpScale;
-        baseSpeed = 7.2 * speedScale;
-        damage = 24 * damageScale;
+        baseHp = 165 * hpScale;
+        baseSpeed = 6.9 * speedScale;
+        damage = 22 * damageScale;
       }
 
       enemies.push({
@@ -2601,9 +2629,9 @@
 
       const diff = difficultyMultiplier();
       const levelFactor = 1 + (level - 1) * 0.12;
-      const baseHp = 620 * diff * levelFactor;
-      const baseSpeed = 7.5 + diff * 0.35;
-      const damage = 38 * levelFactor * (1 + elapsedTime / 180);
+      const baseHp = 560 * diff * levelFactor;
+      const baseSpeed = 7 + diff * 0.3;
+      const damage = 36 * levelFactor * (1 + elapsedTime / 190);
 
       const boss = {
         x,
@@ -2854,6 +2882,7 @@
       player.dodgeCooldown = player.dodgeCooldownMax;
       player.invuln = 0.75;
       player.burstTimer = 0.5;
+      autoDodgeTimer = player.dodgeCooldownMax;
       cameraShake = Math.max(cameraShake, 0.15);
       sJump();
     }
@@ -2974,6 +3003,12 @@
 
       player.dodgeCooldown = Math.max(0, player.dodgeCooldown - dt);
       player.invuln = Math.max(0, player.invuln - dt);
+
+      autoDodgeTimer = Math.min(autoDodgeTimer, player.dodgeCooldownMax);
+      autoDodgeTimer = Math.max(0, autoDodgeTimer - dt);
+      if (autoDodgeTimer <= 0 && player.dodgeCooldown <= 0 && player.onGround) {
+        tryJump();
+      }
     }
 
 
@@ -3524,16 +3559,21 @@
       sunLight.position.set(sunX * 80, sunY * 80 + 60, 30);
 
       const lightStrength = clamp(sunY * 0.8 + 0.2, 0.05, 1.2);
-      ambientLight.intensity = 0.55 + lightStrength * 0.65 - weather.intensity * 0.1;
-      sunLight.intensity = 0.8 + lightStrength * 1.25;
+      ambientLight.intensity = 0.6 + lightStrength * 0.6 - weather.intensity * 0.08;
+      const warmSun = new THREE.Color(0xffe0a0);
+      const coolMoon = new THREE.Color(0x6fb7ff);
+      sunLight.color.copy(warmSun.clone().lerp(coolMoon, 1 - mix));
+      sunLight.intensity = 0.55 + lightStrength * 1.35;
 
       const mix = clamp(lightStrength, 0, 1);
       lastLightMix = mix;
       const skyBlend = duskColor.clone().lerp(dayColor, mix);
       const bgColor = nightColor.clone().lerp(skyBlend, mix + 0.15);
       scene.background = bgColor;
-      scene.fog.color.copy(bgColor.clone().lerp(duskColor, 0.25));
-      scene.fog.density = 0.0032 + (1 - mix) * 0.004 + weather.intensity * 0.0025;
+      const fogDay = new THREE.Color(0xd8e3ef);
+      const fogNight = duskColor.clone().lerp(nightColor, 0.4);
+      scene.fog.color.copy(fogNight.clone().lerp(fogDay, mix));
+      scene.fog.density = 0.0024 + (1 - mix) * 0.0026 + weather.intensity * 0.002;
 
       if (skyDome) {
         skyDome.material.color = bgColor.clone().lerp(duskColor, 0.2);
@@ -3559,8 +3599,11 @@
       }
 
       if (groundMaterial) {
-        groundMaterial.roughness = 0.92 - mix * 0.08;
-        groundMaterial.metalness = 0.04 + mix * 0.05;
+        const desertBase = new THREE.Color(0x8b5a2b);
+        const nightTint = new THREE.Color(0x5a3a22);
+        groundMaterial.color.copy(nightTint.lerp(desertBase, mix * 0.8 + 0.2));
+        groundMaterial.roughness = 0.96 - mix * 0.04;
+        groundMaterial.metalness = 0.0;
       }
       if (waterMaterial) {
         // Su rengi gün içinde hafif değişsin
@@ -3686,6 +3729,23 @@
       }
 
       camera.lookAt(player.x, player.y + 1.6, player.z);
+    }
+
+    function updateTutorial(dt) {
+      if (!tutorialHint) return;
+      if (gameState !== "playing") return;
+      if (!showTutorial) {
+        tutorialHint.classList.remove("visible");
+        return;
+      }
+
+      tutorialTimer = Math.max(0, tutorialTimer - dt);
+      tutorialHint.classList.add("visible");
+
+      if (tutorialTimer <= 0) {
+        showTutorial = false;
+        tutorialHint.classList.remove("visible");
+      }
     }
 
     function updateUI() {
@@ -4001,14 +4061,10 @@
         });
       }
 
-      if (jumpOverlay) {
-        jumpOverlay.addEventListener("pointerdown", () => {
-          initAudio();
-          const now = performance.now();
-          if (now - doubleTapTimer < 260) {
-            tryJump();
-          }
-          doubleTapTimer = now;
+      if (tutorialHint) {
+        tutorialHint.addEventListener("click", () => {
+          showTutorial = false;
+          tutorialHint.classList.remove("visible");
         });
       }
 
@@ -4092,9 +4148,9 @@
         spawnTimer -= dt;
         if (spawnTimer <= 0) {
           const difficulty = difficultyMultiplier();
-          const wave = 1 + Math.floor(Math.max(0, (difficulty - 2.5) * 0.35));
+          const wave = 1 + Math.floor(Math.max(0, (difficulty - 3) * 0.28));
           for (let n = 0; n < wave; n++) spawnEnemy();
-          const spawnInterval = Math.max(0.18, 1.05 / (1.15 + difficulty * 0.35));
+          const spawnInterval = Math.max(0.22, 1.2 / (1.05 + difficulty * 0.28));
           spawnTimer = spawnInterval;
         }
 
@@ -4124,6 +4180,7 @@
       updateDayNight(dt);
       updateObstacles(dt);
       updateCamera(dt);
+      updateTutorial(dt);
       updateUI();
       updateMinimap(dt);
       updateEffects(dt);
