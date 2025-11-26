@@ -26,7 +26,7 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background: radial-gradient(circle at top, #3c1c0e 0, #1d0e08 45%, #0a0402 100%);
+      background: radial-gradient(circle at 20% 18%, #c2703a 0, #5a321b 46%, #120807 100%);
       color: var(--text);
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
@@ -78,25 +78,33 @@
 
     .hud-pill {
       pointer-events: auto;
-      background: var(--panel);
-      border-radius: 999px;
+      background: linear-gradient(135deg, rgba(15, 23, 42, 0.92), rgba(15, 23, 42, 0.76));
+      border-radius: 12px;
       border: 1px solid rgba(148, 163, 184, 0.9);
-      padding: 4px 10px;
+      padding: 6px 12px;
       display: inline-flex;
       align-items: center;
       gap: 6px;
       backdrop-filter: blur(10px);
+      box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+      min-height: 32px;
     }
 
     .hud-label {
-      font-size: 11px;
+      font-size: 10px;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.12em;
       color: var(--text-soft);
     }
 
     .hud-value {
-      font-weight: 600;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .hud-pill.ready {
+      border-color: #f59e0b;
+      box-shadow: 0 12px 30px rgba(245, 158, 11, 0.35);
     }
 
     /* HUD bars */
@@ -115,7 +123,7 @@
     .hud-bar {
       min-width: 180px;
       flex: 1;
-      max-width: 320px;
+      max-width: 360px;
     }
 
     .hud-bar-label {
@@ -130,12 +138,12 @@
     .hud-bar-track {
       position: relative;
       width: 100%;
-      height: 12px;
-      border-radius: 999px;
-      background: rgba(15, 23, 42, 0.65);
+      height: 13px;
+      border-radius: 12px;
+      background: linear-gradient(180deg, rgba(15, 23, 42, 0.8), rgba(15, 23, 42, 0.55));
       border: 1px solid rgba(148, 163, 184, 0.45);
       overflow: hidden;
-      box-shadow: 0 8px 18px rgba(0,0,0,0.45);
+      box-shadow: 0 8px 18px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.1);
     }
 
     .hud-bar-fill {
@@ -146,13 +154,8 @@
     }
 
     #hp-bar-fill {
-      background: linear-gradient(90deg, #f97316, #ef4444);
-      box-shadow: 0 0 16px rgba(239, 68, 68, 0.65);
-    }
-
-    #xp-mini-fill {
-      background: linear-gradient(90deg, #38bdf8, #22c55e);
-      box-shadow: 0 0 16px rgba(56, 189, 248, 0.5);
+      background: linear-gradient(90deg, #fb923c, #ef4444 65%, #b91c1c);
+      box-shadow: 0 0 20px rgba(239, 68, 68, 0.65);
     }
 
     /* XP bar */
@@ -173,8 +176,9 @@
     #xp-inner {
       position: relative;
       width: 100%;
-      height: 16px;
-      background: #020617;
+      height: 18px;
+      background: radial-gradient(circle at 30% 50%, rgba(255,255,255,0.08), rgba(2,6,23,0.9));
+      overflow: hidden;
     }
 
     #xp-fill {
@@ -184,8 +188,9 @@
       bottom: 0;
       width: 0%;
       background: linear-gradient(90deg, #38bdf8, #22c55e);
-      box-shadow: 0 0 20px rgba(56, 189, 248, 1);
+      box-shadow: 0 0 26px rgba(56, 189, 248, 0.85);
       transition: width 0.18s linear;
+      border-radius: 999px;
     }
 
     #xp-text {
@@ -198,6 +203,7 @@
       color: #e5e7eb;
       text-shadow: 0 0 5px rgba(0, 0, 0, 0.9);
       pointer-events: none;
+      letter-spacing: 0.04em;
     }
 
     /* Screens */
@@ -608,6 +614,10 @@
           <span class="hud-label">KILLS</span>
           <span class="hud-value" id="hud-kills">0</span>
         </div>
+        <div class="hud-pill" id="hud-rescue">
+          <span class="hud-label">SAFETY</span>
+          <span class="hud-value" id="hud-rescue-value">0%</span>
+        </div>
       </div>
       <div class="hud-group">
         <div class="hud-pill">
@@ -625,10 +635,6 @@
       <div class="hud-bar">
         <div class="hud-bar-label"><span>Health</span><span id="hud-hp-label">100%</span></div>
         <div class="hud-bar-track"><div class="hud-bar-fill" id="hp-bar-fill"></div></div>
-      </div>
-      <div class="hud-bar">
-        <div class="hud-bar-label"><span>XP</span><span id="hud-xp-label">0 / 10</span></div>
-        <div class="hud-bar-track"><div class="hud-bar-fill" id="xp-mini-fill"></div></div>
       </div>
     </div>
 
@@ -773,6 +779,7 @@
     let weatherParticles = null;
     let weatherVelocities = null;
     let weatherMaterial = null;
+    let clouds = [];
     let weather = { type: "clear", timer: 25, intensity: 0 };
     let lastLightMix = 1;
 
@@ -905,6 +912,8 @@
     let tutorialTimer = 12;
     let showTutorial = true;
     let autoDodgeTimer = 0;
+    const RESCUE_MAX = 100;
+    let rescueCharge = 0;
 
     // Özel yetenekler
     let novaInterval = 0;
@@ -1003,14 +1012,14 @@
     const hudKills = document.getElementById("hud-kills");
     const hudTime = document.getElementById("hud-time");
     const hudBuild = document.getElementById("hud-build");
+    const hudRescue = document.getElementById("hud-rescue");
+    const hudRescueValue = document.getElementById("hud-rescue-value");
     const hint = document.getElementById("hint");
 
     const xpFill = document.getElementById("xp-fill");
     const xpText = document.getElementById("xp-text");
     const hpBarFill = document.getElementById("hp-bar-fill");
-    const xpMiniFill = document.getElementById("xp-mini-fill");
     const hudHpLabel = document.getElementById("hud-hp-label");
-    const hudXpLabel = document.getElementById("hud-xp-label");
     const damageFlashEl = document.getElementById("damage-flash");
 
     const startScreen = document.getElementById("start-screen");
@@ -1323,6 +1332,10 @@
       return { x: x * c - z * s, z: x * s + z * c };
     }
 
+    function gainRescueCharge(value) {
+      rescueCharge = clamp(rescueCharge + value, 0, RESCUE_MAX);
+    }
+
     function sampleUpgrades(n) {
       const pool = ALL_UPGRADES.slice();
       const choices = [];
@@ -1385,13 +1398,13 @@
     // THREE INIT
     function initThree() {
       scene = new THREE.Scene();
-      // Gece koyu, gündüz ise daha sıcak çöl tonları
-      scene.background = new THREE.Color(0x201006);
-      scene.fog = new THREE.FogExp2(0x5e3216, 0.00145); // daha sıcak ve daha az yoğun sis
+      // Gece koyu, gündüz ise daha sıcak ve parlak gökyüzü
+      scene.background = new THREE.Color(0x2b180d);
+      scene.fog = new THREE.FogExp2(0xd3b693, 0.00095); // daha sıcak ve daha hafif sis
 
-      dayColor = new THREE.Color(0xf0c27b);  // açık çöl gökyüzü
-      duskColor = new THREE.Color(0x5a2c1a);
-      nightColor = new THREE.Color(0x140806);
+      dayColor = new THREE.Color(0xffc58f);  // sıcak güneş ışığı
+      duskColor = new THREE.Color(0xff8b4a);
+      nightColor = new THREE.Color(0x0b1224);
 
 
       camera = new THREE.PerspectiveCamera(
@@ -1431,6 +1444,7 @@
       scene.add(backLight);
 
       createSkyDome();
+      createClouds();
       initWeatherSystem();
 
       createTerrain();
@@ -1466,8 +1480,8 @@
       const skyGeo = new THREE.SphereGeometry(520, 32, 32);
       const pos = skyGeo.attributes.position;
       const colors = new Float32Array(pos.count * 3);
-      const baseBottom = new THREE.Color(0x0b1224);
-      const baseTop = new THREE.Color(0x1e3a8a);
+      const baseBottom = new THREE.Color(0xffedd5);
+      const baseTop = new THREE.Color(0xffc285);
 
       for (let i = 0; i < pos.count; i++) {
         const y = pos.getY(i);
@@ -1489,6 +1503,45 @@
       skyDome = new THREE.Mesh(skyGeo, skyMat);
       skyDome.position.y = -20;
       scene.add(skyDome);
+    }
+
+    function createClouds() {
+      const cloudGeo = new THREE.SphereGeometry(1, 16, 16);
+      const makeCluster = () => {
+        const group = new THREE.Group();
+        const segmentCount = 3 + (Math.random() * 3) | 0;
+        for (let i = 0; i < segmentCount; i++) {
+          const m = new THREE.Mesh(
+            cloudGeo.clone(),
+            new THREE.MeshStandardMaterial({
+              color: 0xfff3e0,
+              emissive: 0xffedd5,
+              emissiveIntensity: 0.15,
+              transparent: true,
+              opacity: 0.9,
+              roughness: 0.7,
+              metalness: 0,
+            })
+          );
+          const spread = 3.5;
+          m.position.set((Math.random() - 0.5) * spread, Math.random() * 0.6, (Math.random() - 0.5) * spread);
+          const s = 2.5 + Math.random() * 2.4;
+          m.scale.set(s, s * 0.7, s);
+          group.add(m);
+        }
+        return group;
+      };
+
+      const cloudCount = 14;
+      for (let i = 0; i < cloudCount; i++) {
+        const cluster = makeCluster();
+        cluster.position.set((Math.random() - 0.5) * (WORLD_SIZE - 120), 120 + Math.random() * 40, (Math.random() - 0.5) * (WORLD_SIZE - 120));
+        cluster.userData.speed = 2 + Math.random() * 2.5;
+        cluster.userData.dir = Math.random() < 0.5 ? 1 : -1;
+        cluster.traverse((c) => { c.castShadow = false; c.receiveShadow = false; });
+        clouds.push(cluster);
+        scene.add(cluster);
+      }
     }
 
     function initWeatherSystem() {
@@ -1550,24 +1603,24 @@
 
         if (y < WATER_LEVEL - 3.2) {
           // suyun altında kalan en dip: koyu çamurlu toprak
-          r = 0.32; g = 0.23; b = 0.14;
+          r = 0.28; g = 0.22; b = 0.16;
         } else if (y < WATER_LEVEL + 0.8) {
           // su kenarı / sahil: açık kum rengi
-          r = 0.96; g = 0.84; b = 0.6;
+          r = 0.82; g = 0.72; b = 0.55;
         } else if (y < 4) {
           // alt seviye kum/çamur: sıcak toprak tonları
-          r = 0.84; g = 0.62; b = 0.36;
-          if (biome === "swamp") { r -= 0.05; g += 0.05; b += 0.02; }
-          if (biome === "evergreen") { r += 0.05; g += 0.04; }
+          r = 0.64; g = 0.48; b = 0.3;
+          if (biome === "swamp") { r -= 0.04; g += 0.04; b += 0.03; }
+          if (biome === "evergreen") { r += 0.04; g += 0.05; }
         } else if (y < 10) {
           // yamaçlar: kızıl ve sarı kum karışımı
-          r = 0.9; g = 0.68; b = 0.4;
+          r = 0.7; g = 0.53; b = 0.34;
         } else if (y < 16) {
           // kayalık ama sıcak kahverengiler
-          r = 0.72; g = 0.55; b = 0.4;
+          r = 0.58; g = 0.45; b = 0.32;
         } else {
           // zirve: aydınlık taş / tozlu turuncu
-          r = 0.9; g = 0.8; b = 0.64;
+          r = 0.75; g = 0.65; b = 0.5;
         }
 
         // Hafif gölge / eğim katmanları
@@ -1590,10 +1643,10 @@
 
         // Genel olarak aydınlat: gece bile zemini net görelim
         const warmNoise = (Perlin.noise(x * 0.04, z * 0.04) * 0.05);
-        const brighten = 1.26;
-        r = Math.min((r + warmNoise * 1.1) * brighten + 0.05, 1.0);
-        g = Math.min((g + warmNoise * 0.55) * brighten + 0.04, 1.0);
-        b = Math.min((b + warmNoise * 0.2) * (brighten * 0.92) + 0.02, 1.0);
+        const brighten = 1.1;
+        r = Math.min((r + warmNoise * 1.1) * brighten + 0.04, 1.0);
+        g = Math.min((g + warmNoise * 0.55) * brighten + 0.03, 1.0);
+        b = Math.min((b + warmNoise * 0.25) * (brighten * 0.9) + 0.02, 1.0);
     
         colors[i * 3 + 0] = r;
         colors[i * 3 + 1] = g;
@@ -1606,7 +1659,7 @@
     
       groundMaterial = new THREE.MeshStandardMaterial({
         vertexColors: true,
-        color: 0xc8873f,
+        color: 0x8b5a2b,
         metalness: 0.02,
         roughness: 0.96,
         flatShading: true, // low-poly / minecraft hissi için daha net yüzeyler
@@ -1622,9 +1675,9 @@
       // Arazinin hatlarını takip eden tel kafes grid
       const gridGeo = new THREE.WireframeGeometry(groundGeo);
       const gridMat = new THREE.LineBasicMaterial({
-        color: 0x5f3515,
+        color: 0x3d2a18,
         transparent: true,
-        opacity: 0.18,
+        opacity: 0.16,
       });
       const groundGrid = new THREE.LineSegments(gridGeo, gridMat);
       groundGrid.rotation.x = -Math.PI / 2;
@@ -1636,11 +1689,11 @@
       // Su rengi de daha belirgin, ama zemin maviye boğulmasın
       const waterGeo = new THREE.PlaneGeometry(WORLD_SIZE * 1.4, WORLD_SIZE * 1.4);
       waterMaterial = new THREE.MeshStandardMaterial({
-        color: 0xb9804d,
+        color: 0x2b6cb0,
         transparent: true,
-        opacity: 0.32,
-        metalness: 0.08,
-        roughness: 0.45,
+        opacity: 0.68,
+        metalness: 0.12,
+        roughness: 0.28,
       });
 
       const water = new THREE.Mesh(waterGeo, waterMaterial);
@@ -1655,14 +1708,14 @@
     }
 
     function scatterGrass() {
-      const count = 2200;
+      const count = 3200;
       const geo = new THREE.ConeGeometry(0.16, 0.95, 6);
       geo.translate(0, 0.45, 0);
       const mat = new THREE.MeshStandardMaterial({
-        color: 0x22c55e,
-        emissive: 0x15803d,
-        emissiveIntensity: 0.42,
-        roughness: 0.9,
+        color: 0x2ca55f,
+        emissive: 0x166534,
+        emissiveIntensity: 0.32,
+        roughness: 0.88,
         metalness: 0.05,
         flatShading: true,
       });
@@ -2584,6 +2637,7 @@
       doubleTapTimer = 0;
       novaInterval = 0;
       novaTimer = 0;
+      rescueCharge = 0;
 
       hudBuild.textContent = "Mountains & Forest";
     }
@@ -2747,11 +2801,11 @@
       const radius = style.radius || (fromPlayer ? 0.28 * player.bulletScale : 0.22);
       const geo = new THREE.SphereGeometry(radius, 10, 10);
       const mat = new THREE.MeshStandardMaterial({
-        color: style.color || (fromPlayer ? 0xffa638 : 0x6366f1),
-        emissive: style.emissive || (fromPlayer ? 0xff6b00 : 0x6366f1),
-        emissiveIntensity: style.emissiveIntensity || 1.15,
-        roughness: 0.3,
-        metalness: 0.3,
+        color: style.color || (fromPlayer ? 0xffc241 : 0x6366f1),
+        emissive: style.emissive || (fromPlayer ? 0xff8b3d : 0x6366f1),
+        emissiveIntensity: style.emissiveIntensity || (fromPlayer ? 1.45 : 1.15),
+        roughness: 0.28,
+        metalness: 0.28,
       });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.castShadow = true;
@@ -2911,6 +2965,30 @@
       }
     }
 
+    function triggerRescuePulse() {
+      if (rescueCharge < 30) return false;
+      rescueCharge = Math.max(0, rescueCharge - 30);
+      const radius = 7;
+      enemies.forEach((foe) => {
+        const dx = foe.x - player.x;
+        const dz = foe.z - player.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist > 0.0001 && dist < radius) {
+          const push = (radius - dist + 1.2) * 0.55;
+          const dir = normalize2(dx, dz);
+          foe.x += dir.x * push;
+          foe.z += dir.z * push;
+          foe.slowTimer = Math.max(foe.slowTimer || 0, 1.4);
+          foe.slowFactor = Math.min(foe.slowFactor || 1, 0.45);
+        }
+      });
+      player.invuln = Math.max(player.invuln, 0.9);
+      player.dodgeCooldown = Math.min(player.dodgeCooldown, player.dodgeCooldownMax * 0.5);
+      cameraShake = Math.max(cameraShake, 0.18);
+      spawnRescueWave();
+      return true;
+    }
+
     function spawnHealBurst(x, z) {
       const ringGeo = new THREE.RingGeometry(0.25, 1.4, 32);
       const ringMat = new THREE.MeshBasicMaterial({ color: 0x22c55e, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
@@ -2930,6 +3008,37 @@
       spark.position.set(x, terrainHeight(x, z) + 0.15, z);
       scene.add(spark);
       effects.push({ mesh: spark, life: 0.18, maxLife: 0.18, type: "spark" });
+    }
+
+    function spawnRescueWave() {
+      const ringGeo = new THREE.RingGeometry(0.6, 4.5, 52);
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+      const ring = new THREE.Mesh(ringGeo, ringMat);
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(player.x, terrainHeight(player.x, player.z) + 0.12, player.z);
+      scene.add(ring);
+      effects.push({ mesh: ring, life: 0.5, maxLife: 0.5, type: "rescue" });
+    }
+
+    function spawnMuzzleFlash(origin, dir) {
+      const geo = new THREE.ConeGeometry(0.42, 1.4, 12, 1);
+      geo.translate(0, 0.7, 0);
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0xffc241,
+        emissive: 0xff8b3d,
+        emissiveIntensity: 1.6,
+        transparent: true,
+        opacity: 0.9,
+        roughness: 0.35,
+        metalness: 0.12,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = false;
+      mesh.rotation.x = Math.PI / 2;
+      mesh.rotation.y = Math.atan2(dir.x, dir.z);
+      mesh.position.set(origin.x, origin.y, origin.z);
+      scene.add(mesh);
+      effects.push({ mesh, life: 0.18, maxLife: 0.18, type: "muzzle" });
     }
 
     function killEnemy(index) {
@@ -2954,6 +3063,7 @@
       if (player.onKillHeal) {
         player.hp = Math.min(player.maxHp, player.hp + player.onKillHeal);
       }
+      gainRescueCharge(12);
     }
 
     // PLAYER
@@ -3317,6 +3427,9 @@
         e.mesh.position.set(e.x, baseY, e.z);
 
         const dPlayer = Math.hypot(player.x - e.x, player.z - e.z);
+        if (dPlayer < player.radius + e.radius - 0.2) {
+          triggerRescuePulse();
+        }
         if (dPlayer < player.radius + e.radius) {
           const shake = e.isBoss ? 0.2 : 0.1;
           applyPlayerDamage(e.damage * dt, shake, "contact");
@@ -3376,6 +3489,7 @@
                 dmg *= 1.8;
               }
               e.hp -= dmg;
+              gainRescueCharge(4);
               e.hitFlash = 0.16;
               spawnHitSpark(e.x, e.z, e.isBoss ? 0xfca5a5 : 0xffffff);
               if (b.splashRadius) {
@@ -3499,6 +3613,8 @@
 
     function fireWeapon(type, dirX, dirZ) {
       triggerShootAnimation();
+      const muzzleOrigin = { x: player.x + dirX * 1.2, y: player.y + 0.6, z: player.z + dirZ * 1.2 };
+      spawnMuzzleFlash(muzzleOrigin, { x: dirX, z: dirZ });
       if (type === "scatter") {
         const pellets = 7;
         for (let i = 0; i < pellets; i++) {
@@ -3692,17 +3808,17 @@
 
       const mix = clamp(lightStrength, 0, 1);
       lastLightMix = mix;
-      const skyBlend = duskColor.clone().lerp(dayColor, mix);
-      const bgColor = nightColor.clone().lerp(skyBlend, mix + 0.18);
+      const skyBlend = duskColor.clone().lerp(dayColor, mix * 1.05);
+      const bgColor = nightColor.clone().lerp(skyBlend, mix + 0.22);
       scene.background = bgColor;
-      const fogDay = new THREE.Color(0xd9e5ff);
-      const fogNight = new THREE.Color(0x0c1324);
+      const fogDay = new THREE.Color(0xffedd5);
+      const fogNight = new THREE.Color(0x0b1224);
       const fogColor = fogNight.clone().lerp(fogDay, mix);
       scene.fog.color.copy(fogColor);
-      scene.fog.density = 0.0024 + (1 - mix) * 0.0036 + weather.intensity * 0.002;
+      scene.fog.density = 0.0012 + (1 - mix) * 0.0016 + weather.intensity * 0.0011;
 
       if (skyDome) {
-        skyDome.material.color = bgColor.clone().lerp(duskColor, 0.2);
+        skyDome.material.color = bgColor.clone().lerp(duskColor, 0.15);
       }
 
       if (starMaterial) {
@@ -3727,14 +3843,14 @@
       if (groundMaterial) {
         groundMaterial.roughness = 0.96 - mix * 0.04;
         groundMaterial.metalness = 0.0;
-        groundMaterial.color = new THREE.Color(0x7a4c24).lerp(new THREE.Color(0xd9b47a), mix * 0.65);
+        groundMaterial.color = new THREE.Color(0x5f3a1f).lerp(new THREE.Color(0xc49a6a), mix * 0.7);
       }
       if (waterMaterial) {
         // Su rengi gün içinde hafif değişsin
-        const base = new THREE.Color(0x1b2a38);
-        const dayTint = new THREE.Color(0x3f6b82);
-        waterMaterial.color = base.clone().lerp(dayTint, mix * 0.6);
-        waterMaterial.opacity = 0.5 + mix * 0.22;
+        const base = new THREE.Color(0x1f4f8d);
+        const dayTint = new THREE.Color(0x3b82f6);
+        waterMaterial.color = base.clone().lerp(dayTint, mix * 0.55);
+        waterMaterial.opacity = 0.6 + mix * 0.14;
       }
 
       // HUD build text: fazı göster
@@ -3872,11 +3988,19 @@
       if (elapsedTime > 240) stage = "Stormfront";
       hudBuild.textContent = stage;
 
+      const rescueRatio = clamp(rescueCharge / RESCUE_MAX, 0, 1);
+      if (hudRescueValue) hudRescueValue.textContent = `${Math.round(rescueRatio * 100)}%`;
+      if (hudRescue) {
+        hudRescue.classList.toggle("ready", rescueRatio >= 0.35);
+        const start = "rgba(17,24,39,0.9)";
+        const end = "rgba(245,158,11,0.28)";
+        hudRescue.style.background = `linear-gradient(135deg, ${start}, ${end})`;
+        hudRescue.style.borderColor = rescueRatio > 0.6 ? "#fbbf24" : "rgba(148, 163, 184, 0.9)";
+      }
+
       const ratio = clamp(xp / xpNeeded, 0, 1);
       xpFill.style.width = `${ratio * 100}%`;
       xpText.textContent = `XP ${Math.floor(xp)} / ${xpNeeded}`;
-      if (xpMiniFill) xpMiniFill.style.width = `${ratio * 100}%`;
-      if (hudXpLabel) hudXpLabel.textContent = `${Math.floor(xp)} / ${xpNeeded}`;
 
       if (dodgeIndicator) {
         const fill = player.dodgeCooldownMax > 0 ? 1 - (player.dodgeCooldown / player.dodgeCooldownMax) : 1;
@@ -3949,6 +4073,18 @@
         minimapCtx.beginPath();
         minimapCtx.arc(toMap(activeBoss.x), toMap(activeBoss.z), 8, 0, Math.PI * 2);
         minimapCtx.stroke();
+      }
+    }
+
+    function updateClouds(dt) {
+      if (!clouds.length) return;
+      const limit = WORLD_SIZE / 2 + 140;
+      for (const c of clouds) {
+        const drift = (c.userData.speed || 1.5) * (c.userData.dir || 1);
+        c.position.x += drift * dt;
+        if (c.position.x > limit) c.position.x = -limit;
+        if (c.position.x < -limit) c.position.x = limit;
+        c.rotation.y += 0.003 * dt * c.userData.dir;
       }
     }
 
@@ -4072,6 +4208,14 @@
           const s = 0.8 + t * 1.4;
           eff.mesh.scale.set(s, s, s);
           eff.mesh.material.opacity = 0.8 * (1 - t);
+        } else if (eff.type === "rescue") {
+          const s = 0.9 + t * 2.2;
+          eff.mesh.scale.set(s, s, s);
+          eff.mesh.material.opacity = 0.85 * (1 - t);
+        } else if (eff.type === "muzzle") {
+          const s = 1 + t * 1.6;
+          eff.mesh.scale.set(1, s, 1);
+          eff.mesh.material.opacity = 0.9 * (1 - t);
         }
       }
     }
@@ -4284,6 +4428,7 @@
       }
 
       updateWeather(dt);
+      updateClouds(dt);
       updateDayNight(dt);
       updateObstacles(dt);
       updateCamera(dt);
