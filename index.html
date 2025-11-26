@@ -518,7 +518,7 @@
     const DAY_LENGTH = 40;           // saniye (gece-gündüz turu)
     const OBSTACLE_COUNT_TREES = 260;
     const OBSTACLE_COUNT_ROCKS = 140;
-    const WATER_LEVEL = -5.5;
+    const WATER_LEVEL = -7;
     const BIOME_SCALE = 0.0055;
 
     let scene, camera, renderer;
@@ -603,7 +603,7 @@
       const ridge = Math.abs(Perlin.noise(x * s2 - 80, z * s2 + 110)) * 12;
       const h1 = Perlin.noise(x * s1, z * s1) * 26;
       const h2 = Perlin.noise(x * s2 + 100, z * s2 + 100) * 8;
-      return h1 + h2 + ridge - 13;
+      return h1 + h2 + ridge - 11;
     }
 
     function biomeAt(x, z) {
@@ -943,6 +943,33 @@
         }
       },
       {
+        id: "weapon_sword",
+        name: "Hellblade",
+        tag: "Weapon",
+        desc: "Yakın menzilli kılıç darbesi, geniş bir yay içinde keser.",
+        apply() {
+          if (!player.weapons.includes("sword")) player.weapons.push("sword");
+        }
+      },
+      {
+        id: "weapon_spear",
+        name: "Rift Spear",
+        tag: "Weapon",
+        desc: "Hızlı ve zırh delen mızrak hamlesi eklenir.",
+        apply() {
+          if (!player.weapons.includes("spear")) player.weapons.push("spear");
+        }
+      },
+      {
+        id: "weapon_orbital",
+        name: "Orbit Blades",
+        tag: "Weapon",
+        desc: "Etrafında dönen cehennem bıçakları yakındakileri doğrar.",
+        apply() {
+          if (!player.weapons.includes("orbital_blades")) player.weapons.push("orbital_blades");
+        }
+      },
+      {
         id: "deflect",
         name: "Bulwark Plating",
         tag: "Defense",
@@ -1062,8 +1089,8 @@
     function initThree() {
       scene = new THREE.Scene();
       // Gece koyu, gündüz gökyüzü daha açık mavi
-      scene.background = new THREE.Color(0x020617);
-      scene.fog = new THREE.FogExp2(0x020617, 0.010); // daha az yoğun fog
+      scene.background = new THREE.Color(0x0a1424);
+      scene.fog = new THREE.FogExp2(0x0a1424, 0.006); // daha az yoğun fog, yakın zemini aç
       
       dayColor = new THREE.Color(0x87ceeb);  // açık gökyüzü
       duskColor = new THREE.Color(0x172554);
@@ -1087,10 +1114,10 @@
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       document.getElementById("game-root").appendChild(renderer.domElement);
 
-      ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
+      ambientLight = new THREE.AmbientLight(0xffffff, 0.95);
       scene.add(ambientLight);
 
-      sunLight = new THREE.DirectionalLight(0xffffff, 1.6);
+      sunLight = new THREE.DirectionalLight(0xffffff, 1.35);
       sunLight.position.set(60, 90, 40);
       sunLight.castShadow = true;
       sunLight.shadow.mapSize.set(1024, 1024);
@@ -1130,7 +1157,7 @@
         lastCamX = e.clientX;
         lastCamY = e.clientY;
         cameraYaw -= dx * 0.004;
-        cameraPitch = clamp(cameraPitch + dy * 0.004, 0.7, 1.3);
+        cameraPitch = clamp(cameraPitch + dy * 0.004, 0.15, 1.4);
       });
       window.addEventListener("pointerup", () => { isDraggingCam = false; });
       window.addEventListener("pointercancel", () => { isDraggingCam = false; });
@@ -1220,59 +1247,63 @@
         // ---- BIOME / RENK PALİTİ ----
         // Daha "minecraft" hissi: kum, çim, toprak, taş net ayrılsın
         let r, g, b;
-    
-        const biome = biomeAt(x, z);
 
-        if (y < WATER_LEVEL - 3) {
+        const biome = biomeAt(x, z);
+        const heightNorm = clamp((y - WATER_LEVEL + 6) / 42, 0, 1);
+
+        if (y < WATER_LEVEL - 3.2) {
           // suyun altında kalan en dip: koyu çamurlu toprak
-          // koyu zeytin tonları
-          r = 0.20; g = 0.22; b = 0.16;
-        } else if (y < WATER_LEVEL + 0.3) {
+          r = 0.16; g = 0.20; b = 0.14;
+        } else if (y < WATER_LEVEL + 0.8) {
           // su kenarı / sahil: açık kum rengi
-          r = 0.93; g = 0.83; b = 0.58; // sıcak sarımsı kum
+          r = 0.96; g = 0.86; b = 0.62;
         } else if (y < 4) {
           // alt seviye çim – düz alanlar, biyoma göre renk
           if (biome === "dirt") {
             r = 0.42; g = 0.32; b = 0.22;
           } else if (biome === "swamp") {
-            r = 0.28; g = 0.42; b = 0.24;
+            r = 0.25; g = 0.42; b = 0.22;
           } else {
-            r = 0.18; g = 0.60; b = 0.24; // canlı yeşil
+            r = 0.14; g = 0.64; b = 0.24; // canlı yeşil
           }
         } else if (y < 10) {
           // yamaç çimleri – biraz daha açık
           if (biome === "evergreen") {
-            r = 0.20; g = 0.65; b = 0.30;
+            r = 0.18; g = 0.66; b = 0.30;
           } else {
-            r = 0.25; g = 0.70; b = 0.32;
+            r = 0.22; g = 0.72; b = 0.32;
           }
+        } else if (y < 16) {
+          // kayalık gri tonlar
+          r = 0.44; g = 0.42; b = 0.40;
         } else {
-          // tepeler: taş / kayalık, gri tonlar
-          r = 0.70; g = 0.70; b = 0.72;
+          // zirve: açık taş / hafif kar
+          r = 0.88; g = 0.90; b = 0.92;
         }
-    
-        // Hafif renk gürültüsü – leke / kir hissi
-        const cNoise = Perlin.noise(x * 0.05 + 500, z * 0.05 + 500); // -1..1
-        const n = 1 + cNoise * 0.15; // ± %15
-        r *= n;
-        g *= n;
-        b *= n;
-    
+
+        // Hafif gölge / eğim katmanları
+        const valleyShade = 0.9 - (1 - heightNorm) * 0.14;
+        const peakLight = 1 + heightNorm * 0.22;
+        const ao = valleyShade * peakLight;
+        r *= ao;
+        g *= ao;
+        b *= ao;
+
         // Kare / karo efekti: grid çizgisi yerine ton farkı
         const tx = Math.floor((x + WORLD_SIZE / 2) / tileSize);
         const tz = Math.floor((z + WORLD_SIZE / 2) / tileSize);
         const checker = (tx + tz) & 1;
-        const checkerMul = checker ? 1.06 : 0.94; // biri biraz koyu, biri biraz açık
-    
+        const checkerMul = checker ? 1.08 : 0.9; // biri biraz koyu, biri biraz açık
+
         r *= checkerMul;
         g *= checkerMul;
         b *= checkerMul;
-    
+
         // Genel olarak aydınlat: gece bile zemini net görelim
-        const brighten = 1.25;
-        r = Math.min(r * brighten, 1.0);
-        g = Math.min(g * brighten, 1.0);
-        b = Math.min(b * brighten, 1.0);
+        const brighten = 1.2;
+        r = Math.min(r * brighten + 0.05, 1.0);
+        g = Math.min(g * brighten + 0.05, 1.0);
+        b = Math.min(b * brighten + 0.05, 1.0);
     
         colors[i * 3 + 0] = r;
         colors[i * 3 + 1] = g;
@@ -1285,27 +1316,40 @@
     
       groundMaterial = new THREE.MeshStandardMaterial({
         vertexColors: true,
-        metalness: 0.0,
-        roughness: 0.85,
+        metalness: 0.05,
+        roughness: 0.82,
         flatShading: true, // low-poly / minecraft hissi için daha net yüzeyler
       });
-    
+
       const ground = new THREE.Mesh(groundGeo, groundMaterial);
       ground.rotation.x = -Math.PI / 2;
       ground.receiveShadow = true;
       scene.add(ground);
-    
+
+      // Arazinin hatlarını takip eden tel kafes grid
+      const gridGeo = new THREE.WireframeGeometry(groundGeo);
+      const gridMat = new THREE.LineBasicMaterial({
+        color: 0x111827,
+        transparent: true,
+        opacity: 0.35,
+      });
+      const groundGrid = new THREE.LineSegments(gridGeo, gridMat);
+      groundGrid.rotation.x = -Math.PI / 2;
+      groundGrid.position.y = ground.position.y + 0.02;
+      groundGrid.frustumCulled = false;
+      scene.add(groundGrid);
+
       // === SU YÜZEYİ ===
       // Su rengi de daha belirgin, ama zemin maviye boğulmasın
       const waterGeo = new THREE.PlaneGeometry(WORLD_SIZE * 1.4, WORLD_SIZE * 1.4);
       waterMaterial = new THREE.MeshStandardMaterial({
-        color: 0x4b341f,
+        color: 0x2b4254,
         transparent: true,
-        opacity: 0.64,
-        metalness: 0.08,
-        roughness: 0.32,
+        opacity: 0.6,
+        metalness: 0.15,
+        roughness: 0.4,
       });
-    
+
       const water = new THREE.Mesh(waterGeo, waterMaterial);
       water.rotation.x = -Math.PI / 2;
       water.position.y = WATER_LEVEL;
@@ -1578,97 +1622,144 @@
     function createPlayer() {
       const group = new THREE.Group();
 
-      // Parlak çekirdek
-      const coreGeo = new THREE.SphereGeometry(0.9, 24, 24);
-      const coreMat = new THREE.MeshStandardMaterial({
-        color: 0x22c55e,
-        emissive: 0x22c55e,
-        emissiveIntensity: 1.2,
-        metalness: 0.3,
-        roughness: 0.25,
+      const suitMat = new THREE.MeshStandardMaterial({
+        color: 0x111827,
+        emissive: 0x0f172a,
+        emissiveIntensity: 0.35,
+        roughness: 0.4,
+        metalness: 0.45,
       });
-      const core = new THREE.Mesh(coreGeo, coreMat);
-      core.position.y = 1.7;
-      core.castShadow = true;
-      group.add(core);
-
-      // Gövde (enerji kapsülü)
-      const bodyGeo = new THREE.CapsuleGeometry(0.9, 2.2, 8, 16);
-      const bodyMat = new THREE.MeshStandardMaterial({
-        color: 0x38bdf8,
-        emissive: 0x1d4ed8,
-        emissiveIntensity: 0.9,
-        roughness: 0.35,
-        metalness: 0.7,
-      });
-      const body = new THREE.Mesh(bodyGeo, bodyMat);
-      body.castShadow = true;
-      group.add(body);
-
-      // Kuyruk / enerji izi
-      const tailGeo = new THREE.CylinderGeometry(0.15, 0.7, 4.6, 18, 1, true);
-      const tailMat = new THREE.MeshStandardMaterial({
+      const accentMat = new THREE.MeshStandardMaterial({
         color: 0x38bdf8,
         emissive: 0x38bdf8,
-        emissiveIntensity: 0.9,
-        transparent: true,
-        opacity: 0.65,
-        metalness: 0.9,
-        roughness: 0.15,
-        side: THREE.DoubleSide
-      });
-      const tail = new THREE.Mesh(tailGeo, tailMat);
-      tail.position.set(0, 0.1, -2.4);
-      tail.rotation.x = Math.PI / 2;
-      tail.castShadow = false;
-      group.add(tail);
-
-      // Yan kanatlar
-      const wingGeo = new THREE.BoxGeometry(0.4, 1.8, 3.4);
-      const wingMat = new THREE.MeshStandardMaterial({
-        color: 0x0ea5e9,
-        emissive: 0x0ea5e9,
-        emissiveIntensity: 0.6,
+        emissiveIntensity: 1.2,
+        roughness: 0.3,
         metalness: 0.7,
-        roughness: 0.4,
       });
-      const wingL = new THREE.Mesh(wingGeo, wingMat);
-      wingL.position.set(-1.25, 0.4, 0);
-      const wingR = wingL.clone();
-      wingR.position.x = 1.25;
-      wingL.castShadow = true;
-      wingR.castShadow = true;
-      group.add(wingL, wingR);
+      const clothMat = new THREE.MeshStandardMaterial({
+        color: 0x1f2937,
+        emissive: 0x0ea5e9,
+        emissiveIntensity: 0.35,
+        roughness: 0.6,
+        metalness: 0.2,
+      });
 
-      // Alt thruster
-      const thrusterGeo = new THREE.ConeGeometry(0.9, 1.6, 18);
-      const thrusterMat = new THREE.MeshStandardMaterial({
-        color: 0xf97316,
-        emissive: 0xf97316,
-        emissiveIntensity: 0.9,
-        metalness: 0.6,
-        roughness: 0.4,
-      });
-      const thruster = new THREE.Mesh(thrusterGeo, thrusterMat);
-      thruster.position.y = -2.2;
-      thruster.rotation.x = Math.PI;
-      thruster.castShadow = true;
-      group.add(thruster);
+      // Bacaklar
+      const legGeo = new THREE.BoxGeometry(0.6, 1.4, 0.8);
+      const legL = new THREE.Mesh(legGeo, suitMat);
+      const legR = legL.clone();
+      legL.position.set(-0.45, -1.2, 0);
+      legR.position.set(0.45, -1.2, 0);
+      legL.castShadow = true; legR.castShadow = true;
+      group.add(legL, legR);
+
+      // Çizme parlaklığı
+      const bootGeo = new THREE.BoxGeometry(0.62, 0.4, 1);
+      const bootL = new THREE.Mesh(bootGeo, clothMat);
+      const bootR = bootL.clone();
+      bootL.position.set(-0.45, -1.9, 0.05);
+      bootR.position.set(0.45, -1.9, 0.05);
+      bootL.castShadow = true; bootR.castShadow = true;
+      group.add(bootL, bootR);
+
+      // Gövde
+      const torsoGeo = new THREE.CapsuleGeometry(0.9, 1.8, 12, 18);
+      const torso = new THREE.Mesh(torsoGeo, clothMat);
+      torso.position.y = 0.6;
+      torso.castShadow = true;
+      torso.userData.pulse = true;
+      group.add(torso);
+
+      // Göğüs parıltısı
+      const coreGeo = new THREE.SphereGeometry(0.4, 18, 18);
+      const core = new THREE.Mesh(coreGeo, accentMat);
+      core.position.set(0, 0.6, 0.65);
+      core.castShadow = true;
+      core.userData.pulse = true;
+      group.add(core);
+
+      // Zırh çizgisi
+      const chestPlateGeo = new THREE.BoxGeometry(1.4, 0.35, 0.7);
+      const chestPlate = new THREE.Mesh(chestPlateGeo, suitMat);
+      chestPlate.position.set(0, 0.6, 0.25);
+      chestPlate.castShadow = true;
+      group.add(chestPlate);
+
+      // Omuzlar
+      const shoulderGeo = new THREE.CylinderGeometry(0.55, 0.65, 0.6, 10);
+      const shoulderL = new THREE.Mesh(shoulderGeo, suitMat);
+      shoulderL.rotation.z = Math.PI / 2;
+      shoulderL.position.set(-1.05, 1.1, 0);
+      const shoulderR = shoulderL.clone();
+      shoulderR.position.x = 1.05;
+      shoulderL.castShadow = true; shoulderR.castShadow = true;
+      group.add(shoulderL, shoulderR);
+
+      // Kollar
+      const armGeo = new THREE.CylinderGeometry(0.22, 0.24, 1.35, 10);
+      const armL = new THREE.Mesh(armGeo, clothMat);
+      armL.position.set(-1.05, 0.3, 0.05);
+      const armR = armL.clone();
+      armR.position.x = 1.05;
+      armL.castShadow = true; armR.castShadow = true;
+      group.add(armL, armR);
+
+      // Eldiven parıltısı
+      const gloveGeo = new THREE.SphereGeometry(0.28, 10, 10);
+      const gloveL = new THREE.Mesh(gloveGeo, accentMat);
+      gloveL.position.set(-1.05, -0.35, 0.2);
+      const gloveR = gloveL.clone();
+      gloveR.position.x = 1.05;
+      gloveL.castShadow = true; gloveR.castShadow = true;
+      gloveL.userData.pulse = gloveR.userData.pulse = true;
+      group.add(gloveL, gloveR);
+
+      // Baş + vizör
+      const headGeo = new THREE.SphereGeometry(0.7, 18, 18);
+      const head = new THREE.Mesh(headGeo, suitMat);
+      head.position.set(0, 1.8, 0.05);
+      head.castShadow = true;
+      head.userData.pulse = true;
+      group.add(head);
+
+      const visorGeo = new THREE.BoxGeometry(1.0, 0.32, 0.14);
+      const visor = new THREE.Mesh(visorGeo, accentMat);
+      visor.position.set(0, 1.75, 0.65);
+      visor.castShadow = true;
+      visor.userData.pulse = true;
+      group.add(visor);
+
+      const hornsGeo = new THREE.ConeGeometry(0.15, 0.4, 6);
+      const hornMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.25, metalness: 0.6 });
+      const hornL = new THREE.Mesh(hornsGeo, hornMat);
+      hornL.position.set(-0.28, 2.35, 0.2);
+      hornL.rotation.set(Math.PI, 0.2, -0.4);
+      const hornR = hornL.clone();
+      hornR.position.x = 0.28;
+      hornR.rotation.y = -0.2;
+      group.add(hornL, hornR);
+
+      // Bel kemeri
+      const beltGeo = new THREE.TorusGeometry(0.95, 0.08, 8, 32);
+      const belt = new THREE.Mesh(beltGeo, suitMat);
+      belt.rotation.x = Math.PI / 2;
+      belt.position.y = -0.35;
+      group.add(belt);
 
       // Altında "fake shadow" disk, zemini hissettirsin
-      const shadowGeo = new THREE.CircleGeometry(2.4, 28);
+      const shadowGeo = new THREE.CircleGeometry(2.2, 28);
       const shadowMat = new THREE.MeshBasicMaterial({
         color: 0x000000,
         transparent: true,
-        opacity: 0.38
+        opacity: 0.42
       });
       const shadow = new THREE.Mesh(shadowGeo, shadowMat);
       shadow.rotation.x = -Math.PI / 2;
-      shadow.position.y = -2.25;
+      shadow.position.y = -2.1;
       group.add(shadow);
 
       // Işık
-      const light = new THREE.PointLight(0x38bdf8, 2.0, 26);
+      const light = new THREE.PointLight(0x38bdf8, 2.1, 26);
       light.position.set(0, 3, 0);
       group.add(light);
 
@@ -1695,177 +1786,213 @@
       const g = new THREE.Group();
       let radius = 1.3;
 
+      const shadowGeo = new THREE.CircleGeometry(1.8, 18);
+      const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.35 });
+      const flatShadow = new THREE.Mesh(shadowGeo, shadowMat);
+      flatShadow.rotation.x = -Math.PI / 2;
+      flatShadow.position.y = -0.02;
+      g.add(flatShadow);
+
       if (type === 0) {
-        // Walker
-        const torsoGeo = new THREE.BoxGeometry(1, 1.8, 0.8);
-        const torsoMat = new THREE.MeshStandardMaterial({
-          color: 0xf97316,
-          emissive: 0xf97316,
-          emissiveIntensity: 0.6,
-          roughness: 0.4,
-          metalness: 0.5,
+        // Walker - boynuzlu kırmızı iblis
+        const skin = new THREE.MeshStandardMaterial({
+          color: 0x7f1d1d,
+          emissive: 0x991b1b,
+          emissiveIntensity: 0.5,
+          metalness: 0.25,
+          roughness: 0.5,
         });
-        const torso = new THREE.Mesh(torsoGeo, torsoMat);
-        torso.position.y = 2;
+        const bone = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.2, metalness: 0.3 });
+
+        const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.8, 1.6, 10, 16), skin);
+        torso.position.y = 1.8;
         torso.castShadow = true;
         g.add(torso);
 
-        const headGeo = new THREE.BoxGeometry(0.8, 0.8, 0.8);
-        const head = new THREE.Mesh(headGeo, torsoMat);
-        head.position.y = 2.9;
-        head.castShadow = true;
-        g.add(head);
-
-        const legGeo = new THREE.BoxGeometry(0.4, 1.4, 0.4);
-        const legL = new THREE.Mesh(legGeo, torsoMat);
-        legL.position.set(-0.35, 1.1, 0);
-        const legR = legL.clone();
-        legR.position.x = 0.35;
-        legL.castShadow = true;
-        legR.castShadow = true;
-        g.add(legL, legR);
-
-        radius = 1.3;
-      } else if (type === 1) {
-        // Crawler
-        const bodyGeo = new THREE.BoxGeometry(1.8, 0.8, 1.2);
-        const bodyMat = new THREE.MeshStandardMaterial({
-          color: 0x22c55e,
-          emissive: 0x22c55e,
-          emissiveIntensity: 0.7,
-          roughness: 0.4,
-          metalness: 0.5,
-        });
-        const body = new THREE.Mesh(bodyGeo, bodyMat);
-        body.position.y = 1.2;
-        body.castShadow = true;
-        g.add(body);
-
-        const headGeo = new THREE.SphereGeometry(0.6, 14, 14);
-        const head = new THREE.Mesh(headGeo, bodyMat);
-        head.position.set(0, 1.5, 0.9);
-        head.castShadow = true;
-        g.add(head);
-
-        const legGeo = new THREE.CylinderGeometry(0.15, 0.15, 1, 8);
-        const legMat = new THREE.MeshStandardMaterial({
-          color: 0x166534,
-          emissive: 0x16a34a,
-          emissiveIntensity: 0.5,
-        });
-        const offsets = [
-          [-0.7, 0.7],
-          [0.7, 0.7],
-          [-0.7, -0.7],
-          [0.7, -0.7],
-        ];
-        offsets.forEach(([x, z]) => {
-          const leg = new THREE.Mesh(legGeo, legMat);
-          leg.position.set(x, 0.7, z);
-          leg.castShadow = true;
-          g.add(leg);
-        });
-
-        radius = 1.4;
-      } else if (type === 2) {
-        // Sentinel
-        const baseGeo = new THREE.CylinderGeometry(0.7, 1.2, 2.6, 12);
-        const baseMat = new THREE.MeshStandardMaterial({
-          color: 0x6366f1,
-          emissive: 0x4f46e5,
-          emissiveIntensity: 0.9,
-          roughness: 0.35,
-          metalness: 0.7,
-        });
-        const base = new THREE.Mesh(baseGeo, baseMat);
-        base.position.y = 1.5;
-        base.castShadow = true;
-        g.add(base);
-
-        const headGeo = new THREE.SphereGeometry(0.9, 20, 20);
-        const head = new THREE.Mesh(headGeo, baseMat);
+        const head = new THREE.Mesh(new THREE.SphereGeometry(0.65, 16, 16), skin);
         head.position.y = 2.8;
         head.castShadow = true;
         g.add(head);
 
-        const armGeo = new THREE.BoxGeometry(0.3, 1.2, 0.3);
-        const armL = new THREE.Mesh(armGeo, baseMat);
-        armL.position.set(-0.9, 2.2, 0);
-        const armR = armL.clone();
-        armR.position.x = 0.9;
-        armL.castShadow = true;
-        armR.castShadow = true;
-        g.add(armL, armR);
+        const hornGeo = new THREE.ConeGeometry(0.18, 0.5, 6);
+        const hornL = new THREE.Mesh(hornGeo, bone);
+        hornL.position.set(-0.25, 3.3, 0.1);
+        hornL.rotation.set(Math.PI * 0.1, 0.25, -0.4);
+        const hornR = hornL.clone();
+        hornR.position.x = 0.25;
+        hornR.rotation.y = -0.25;
+        g.add(hornL, hornR);
 
-        radius = 1.2;
-      } else if (type === 4) {
-        // Bulky tank
-        const shellGeo = new THREE.CapsuleGeometry(1, 1.8, 10, 18);
-        const shellMat = new THREE.MeshStandardMaterial({
-          color: 0x9f1239,
-          emissive: 0xbe123c,
+        const eyeGeo = new THREE.BoxGeometry(0.14, 0.25, 0.1);
+        const eyeMat = new THREE.MeshStandardMaterial({ color: 0xffb347, emissive: 0xff7f50, emissiveIntensity: 1.2 });
+        const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+        eyeL.position.set(-0.18, 2.78, 0.65);
+        const eyeR = eyeL.clone();
+        eyeR.position.x = 0.18;
+        g.add(eyeL, eyeR);
+
+        const legGeo = new THREE.ConeGeometry(0.38, 1.6, 6);
+        const legL = new THREE.Mesh(legGeo, skin);
+        legL.position.set(-0.35, 0.8, 0);
+        legL.rotation.z = Math.PI * 0.5;
+        const legR = legL.clone();
+        legR.position.x = 0.35;
+        legL.castShadow = legR.castShadow = true;
+        g.add(legL, legR);
+
+        radius = 1.35;
+      } else if (type === 1) {
+        // Crawler - dört ayaklı iblis canavarı
+        const hide = new THREE.MeshStandardMaterial({
+          color: 0x3f2a4f,
+          emissive: 0x5b21b6,
           emissiveIntensity: 0.6,
-          roughness: 0.35,
-          metalness: 0.65,
+          roughness: 0.45,
+          metalness: 0.25,
         });
-        const shell = new THREE.Mesh(shellGeo, shellMat);
-        shell.position.y = 1.6;
-        shell.castShadow = true;
-        g.add(shell);
+        const spineMat = new THREE.MeshStandardMaterial({ color: 0x93ffb8, emissive: 0x22c55e, emissiveIntensity: 1.1 });
 
-        const eyeGeo = new THREE.SphereGeometry(0.45, 12, 12);
-        const eyeMat = new THREE.MeshStandardMaterial({
-          color: 0xffffff,
-          emissive: 0xf87171,
-          emissiveIntensity: 1.2,
-        });
-        const eye = new THREE.Mesh(eyeGeo, eyeMat);
-        eye.position.set(0, 2.2, 0.8);
-        eye.castShadow = true;
-        g.add(eye);
-
-        const tuskGeo = new THREE.ConeGeometry(0.18, 0.6, 8);
-        const tuskMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 });
-        const tuskL = new THREE.Mesh(tuskGeo, tuskMat);
-        tuskL.position.set(-0.4, 1.4, 1);
-        tuskL.rotation.x = Math.PI / 2.2;
-        const tuskR = tuskL.clone();
-        tuskR.position.x = 0.4;
-        g.add(tuskL, tuskR);
-
-        radius = 1.5;
-      } else {
-        // Hopper
-        const bodyGeo = new THREE.SphereGeometry(0.9, 14, 14);
-        const bodyMat = new THREE.MeshStandardMaterial({
-          color: 0x0ea5e9,
-          emissive: 0x0ea5e9,
-          emissiveIntensity: 0.8,
-          roughness: 0.4,
-          metalness: 0.6,
-        });
-        const body = new THREE.Mesh(bodyGeo, bodyMat);
-        body.position.y = 1.4;
+        const body = new THREE.Mesh(new THREE.BoxGeometry(2, 1, 1.3), hide);
+        body.position.y = 1.1;
         body.castShadow = true;
         g.add(body);
 
-        const legGeo = new THREE.ConeGeometry(0.25, 0.9, 8);
-        const legMat = new THREE.MeshStandardMaterial({
-          color: 0x0369a1,
-          emissive: 0x0369a1,
-          emissiveIntensity: 0.7,
+        const head = new THREE.Mesh(new THREE.DodecahedronGeometry(0.65, 0), hide);
+        head.position.set(0, 1.35, 0.95);
+        head.castShadow = true;
+        g.add(head);
+
+        const spineGeo = new THREE.ConeGeometry(0.16, 0.6, 6);
+        for (let s = -2; s <= 2; s++) {
+          const spike = new THREE.Mesh(spineGeo, spineMat);
+          spike.position.set(s * 0.35, 1.75, Math.random() * 0.4);
+          spike.rotation.x = -Math.PI / 2;
+          g.add(spike);
+        }
+
+        const clawGeo = new THREE.CylinderGeometry(0.18, 0.1, 1.2, 6);
+        const offsets = [
+          [-0.9, 0.7],
+          [0.9, 0.7],
+          [-0.9, -0.7],
+          [0.9, -0.7],
+        ];
+        offsets.forEach(([x, z]) => {
+          const leg = new THREE.Mesh(clawGeo, spineMat);
+          leg.position.set(x, 0.75, z);
+          leg.rotation.z = Math.PI / 2.3;
+          leg.castShadow = true;
+          g.add(leg);
         });
-        const legL = new THREE.Mesh(legGeo, legMat);
-        legL.position.set(-0.45, 0.7, 0.4);
-        legL.rotation.z = Math.PI / 2.4;
+
+        radius = 1.45;
+      } else if (type === 2) {
+        // Sentinel - havada süzülen gözlü büyücü
+        const robeMat = new THREE.MeshStandardMaterial({
+          color: 0x2d1b4e,
+          emissive: 0x581c87,
+          emissiveIntensity: 0.8,
+          roughness: 0.38,
+          metalness: 0.25,
+        });
+        const eyeMat = new THREE.MeshStandardMaterial({ color: 0xffd166, emissive: 0xff9f1c, emissiveIntensity: 1.4 });
+
+        const robe = new THREE.Mesh(new THREE.ConeGeometry(1.2, 2.4, 14), robeMat);
+        robe.position.y = 1.6;
+        robe.castShadow = true;
+        g.add(robe);
+
+        const hood = new THREE.Mesh(new THREE.DodecahedronGeometry(0.9, 0), robeMat);
+        hood.position.y = 2.9;
+        hood.castShadow = true;
+        g.add(hood);
+
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.45, 14, 14), eyeMat);
+        eye.position.set(0, 2.9, 0.8);
+        eye.castShadow = true;
+        g.add(eye);
+
+        const horns = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.6, 6), eyeMat.clone());
+        horns.position.set(0, 3.5, 0.2);
+        horns.rotation.x = Math.PI;
+        g.add(horns);
+
+        radius = 1.2;
+      } else if (type === 4) {
+        // Bulky tank - zırhlı dev iblis
+        const armor = new THREE.MeshStandardMaterial({
+          color: 0x4a0f1f,
+          emissive: 0x7f1d1d,
+          emissiveIntensity: 0.6,
+          roughness: 0.32,
+          metalness: 0.6,
+        });
+        const tuskMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.2, metalness: 0.4 });
+
+        const shell = new THREE.Mesh(new THREE.CapsuleGeometry(1.1, 2, 10, 16), armor);
+        shell.position.y = 1.7;
+        shell.castShadow = true;
+        g.add(shell);
+
+        const plates = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.6, 1.6), armor.clone());
+        plates.position.set(0, 2.3, 0);
+        plates.castShadow = true;
+        g.add(plates);
+
+        const jaw = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.5, 0.9), armor);
+        jaw.position.set(0, 1.4, 0.9);
+        jaw.castShadow = true;
+        g.add(jaw);
+
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 12), new THREE.MeshStandardMaterial({ color: 0xffb347, emissive: 0xff6b6b, emissiveIntensity: 1.3 }));
+        eye.position.set(0, 2.1, 0.9);
+        eye.castShadow = true;
+        g.add(eye);
+
+        const tuskGeo = new THREE.ConeGeometry(0.22, 0.8, 8);
+        const tuskL = new THREE.Mesh(tuskGeo, tuskMat);
+        tuskL.position.set(-0.55, 1.1, 1.1);
+        tuskL.rotation.x = Math.PI / 2.4;
+        const tuskR = tuskL.clone();
+        tuskR.position.x = 0.55;
+        g.add(tuskL, tuskR);
+
+        radius = 1.55;
+      } else {
+        // Hopper - çevik imp
+        const impMat = new THREE.MeshStandardMaterial({
+          color: 0x5b0f2e,
+          emissive: 0x9f1239,
+          emissiveIntensity: 0.7,
+          roughness: 0.36,
+          metalness: 0.4,
+        });
+        const imp = new THREE.Mesh(new THREE.SphereGeometry(0.85, 14, 14), impMat);
+        imp.position.y = 1.2;
+        imp.castShadow = true;
+        g.add(imp);
+
+        const grin = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.2, 0.1), new THREE.MeshStandardMaterial({ color: 0xffd166, emissive: 0xff6b6b, emissiveIntensity: 1.0 }));
+        grin.position.set(0, 1.05, 0.75);
+        g.add(grin);
+
+        const legGeo = new THREE.CapsuleGeometry(0.22, 0.9, 6, 10);
+        const legL = new THREE.Mesh(legGeo, impMat);
+        legL.position.set(-0.5, 0.4, 0.35);
+        legL.rotation.z = Math.PI / 2.6;
         const legR = legL.clone();
-        legR.position.x = 0.45;
-        legL.castShadow = true;
-        legR.castShadow = true;
+        legR.position.x = 0.5;
         g.add(legL, legR);
+
+        const tail = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.8, 6), impMat);
+        tail.position.set(0, 0.9, -0.75);
+        tail.rotation.x = -Math.PI / 3;
+        g.add(tail);
 
         radius = 1.0;
       }
+
+      flatShadow.scale.setScalar(radius * 1.1);
 
       g.castShadow = true;
       return { mesh: g, radius };
@@ -2017,14 +2144,25 @@
       const startZ = origin ? origin.z : player.z;
       const groundY = terrainHeight(startX, startZ);
 
-      mesh.position.set(
-        startX + n.x * 1.8,
-        groundY + (fromPlayer ? 2.2 : 2),
-        startZ + n.z * 1.8
-      );
+      if (style.orbit) {
+        const angle = style.orbitAngle != null ? style.orbitAngle : Math.atan2(n.z, n.x);
+        const radiusOrbit = style.orbitRadius || 3;
+        mesh.position.set(
+          startX + Math.cos(angle) * radiusOrbit,
+          groundY + (style.orbitYOffset || 1.6),
+          startZ + Math.sin(angle) * radiusOrbit
+        );
+        mesh.userData.orbitAngle = angle;
+      } else {
+        mesh.position.set(
+          startX + n.x * 1.8,
+          groundY + (fromPlayer ? 2.2 : 2),
+          startZ + n.z * 1.8
+        );
+      }
       scene.add(mesh);
 
-      const speed = speedOverride || player.bulletSpeed;
+      const speed = style.orbit ? 0 : (speedOverride || player.bulletSpeed);
 
       bullets.push({
         x: mesh.position.x,
@@ -2040,7 +2178,12 @@
         homing: style.homing || false,
         splashRadius: style.splashRadius,
         slowAmount: style.slowAmount,
-        slowDuration: style.slowDuration
+        slowDuration: style.slowDuration,
+        orbiting: !!style.orbit,
+        orbitRadius: style.orbitRadius || 0,
+        orbitSpeed: style.orbitSpeed || 0,
+        orbitAngle: style.orbitAngle != null ? style.orbitAngle : mesh.userData.orbitAngle,
+        orbitYOffset: style.orbitYOffset || 0
       });
 
       if (fromPlayer) sShoot();
@@ -2213,7 +2356,11 @@
         const t = elapsedTime;
         const scalePulse = 1 + Math.sin(t * 4) * 0.05;
         player.mesh.children.forEach(child => {
-          if (child.geometry instanceof THREE.SphereGeometry || child.geometry instanceof THREE.CapsuleGeometry) {
+          if (
+            child.userData.pulse ||
+            child.geometry instanceof THREE.SphereGeometry ||
+            child.geometry instanceof THREE.CapsuleGeometry
+          ) {
             child.scale.set(scalePulse, scalePulse, scalePulse);
           }
         });
@@ -2338,23 +2485,33 @@
       for (let i = bullets.length - 1; i >= 0; i--) {
         const b = bullets[i];
 
-        if (b.homing && b.fromPlayer && enemies.length > 0) {
-          let target = enemies[0];
-          let best = Infinity;
-          for (const e of enemies) {
-            const d2 = (e.x - b.x) ** 2 + (e.z - b.z) ** 2;
-            if (d2 < best) { best = d2; target = e; }
+        if (b.orbiting && b.fromPlayer) {
+          b.orbitAngle += b.orbitSpeed * dt;
+          const orbitR = b.orbitRadius || 3;
+          b.x = player.x + Math.cos(b.orbitAngle) * orbitR;
+          b.z = player.z + Math.sin(b.orbitAngle) * orbitR;
+          b.life -= dt;
+          const y = terrainHeight(b.x, b.z) + 1.4 + b.orbitYOffset;
+          b.mesh.position.set(b.x, y, b.z);
+        } else {
+          if (b.homing && b.fromPlayer && enemies.length > 0) {
+            let target = enemies[0];
+            let best = Infinity;
+            for (const e of enemies) {
+              const d2 = (e.x - b.x) ** 2 + (e.z - b.z) ** 2;
+              if (d2 < best) { best = d2; target = e; }
+            }
+            const n = normalize2(target.x - b.x, target.z - b.z);
+            b.vx = b.vx * 0.8 + n.x * Math.abs(b.vx) * 0.8;
+            b.vz = b.vz * 0.8 + n.z * Math.abs(b.vz) * 0.8;
           }
-          const n = normalize2(target.x - b.x, target.z - b.z);
-          b.vx = b.vx * 0.8 + n.x * Math.abs(b.vx) * 0.8;
-          b.vz = b.vz * 0.8 + n.z * Math.abs(b.vz) * 0.8;
-        }
-        b.x += b.vx * dt;
-        b.z += b.vz * dt;
-        b.life -= dt;
+          b.x += b.vx * dt;
+          b.z += b.vz * dt;
+          b.life -= dt;
 
-        const y = terrainHeight(b.x, b.z) + (b.fromPlayer ? 2.1 : 2);
-        b.mesh.position.set(b.x, y, b.z);
+          const y = terrainHeight(b.x, b.z) + (b.fromPlayer ? 2.1 : 2);
+          b.mesh.position.set(b.x, y, b.z);
+        }
 
         if (
           Math.abs(b.x) > WORLD_SIZE / 2 + 8 ||
@@ -2495,6 +2652,59 @@
         return;
       }
 
+      if (type === "sword") {
+        const swings = 5;
+        const arcSpan = 0.9;
+        for (let i = 0; i < swings; i++) {
+          const t = (i / (swings - 1)) - 0.5;
+          const rotated = rotate2D(dirX, dirZ, t * arcSpan);
+          spawnBullet(rotated.x, rotated.z, true, null, player.bulletSpeed * 0.65, Math.max(0, player.pierce - 1), {
+            life: 0.22,
+            hitRadius: 0.55,
+            color: 0xf97316,
+            emissive: 0xfb7185,
+            emissiveIntensity: 1.3,
+            damageScale: 1.25,
+          });
+        }
+        return;
+      }
+
+      if (type === "spear") {
+        spawnBullet(dirX, dirZ, true, null, player.bulletSpeed * 1.75, Math.max(1, player.pierce), {
+          life: 0.65,
+          hitRadius: 0.22,
+          color: 0x93c5fd,
+          emissive: 0x3b82f6,
+          emissiveIntensity: 1.4,
+          damageScale: 1.8,
+        });
+        return;
+      }
+
+      if (type === "orbital_blades") {
+        const existingOrbitals = bullets.filter(b => b.fromPlayer && b.orbiting).length;
+        if (existingOrbitals >= 6) return;
+        const blades = 6;
+        for (let i = 0; i < blades; i++) {
+          const ang = (i / blades) * Math.PI * 2;
+          spawnBullet(Math.cos(ang), Math.sin(ang), true, null, 0, Math.max(0, player.pierce - 1), {
+            orbit: true,
+            orbitRadius: 3.2,
+            orbitSpeed: 1.8,
+            orbitAngle: ang,
+            orbitYOffset: 0.4,
+            life: 8,
+            hitRadius: 0.35,
+            color: 0xd946ef,
+            emissive: 0xc026d3,
+            emissiveIntensity: 1.0,
+            damageScale: 0.9,
+          });
+        }
+        return;
+      }
+
       if (type === "rail") {
         spawnBullet(dirX, dirZ, true, null, player.bulletSpeed * 1.6, Math.max(player.pierce, 4), {
           color: 0x38bdf8,
@@ -2611,8 +2821,8 @@
       sunLight.position.set(sunX * 80, sunY * 80 + 60, 30);
 
       const lightStrength = clamp(sunY * 0.8 + 0.2, 0.05, 1.2);
-      ambientLight.intensity = 0.45 + lightStrength * 0.65 - weather.intensity * 0.08;
-      sunLight.intensity = 0.7 + lightStrength * 1.4;
+      ambientLight.intensity = 0.55 + lightStrength * 0.65 - weather.intensity * 0.1;
+      sunLight.intensity = 0.8 + lightStrength * 1.25;
 
       const mix = clamp(lightStrength, 0, 1);
       lastLightMix = mix;
@@ -2620,7 +2830,7 @@
       const bgColor = nightColor.clone().lerp(skyBlend, mix + 0.15);
       scene.background = bgColor;
       scene.fog.color.copy(bgColor.clone().lerp(duskColor, 0.25));
-      scene.fog.density = 0.008 + (1 - mix) * 0.010 + weather.intensity * 0.004;
+      scene.fog.density = 0.0055 + (1 - mix) * 0.006 + weather.intensity * 0.0035;
 
       if (skyDome) {
         skyDome.material.color = bgColor.clone().lerp(duskColor, 0.2);
@@ -2646,15 +2856,15 @@
       }
 
       if (groundMaterial) {
-        groundMaterial.roughness = 0.85 - mix * 0.25;
-        groundMaterial.metalness = 0.22 + mix * 0.16;
+        groundMaterial.roughness = 0.82 - mix * 0.18;
+        groundMaterial.metalness = 0.18 + mix * 0.14;
       }
       if (waterMaterial) {
         // Su rengi gün içinde hafif değişsin
-        const base = new THREE.Color(0x1d4ed8);
-        const dayTint = new THREE.Color(0x38bdf8);
-        waterMaterial.color = base.clone().lerp(dayTint, mix * 0.5);
-        waterMaterial.opacity = 0.45 + mix * 0.2;
+        const base = new THREE.Color(0x1b2a38);
+        const dayTint = new THREE.Color(0x3f6b82);
+        waterMaterial.color = base.clone().lerp(dayTint, mix * 0.6);
+        waterMaterial.opacity = 0.5 + mix * 0.22;
       }
 
       // HUD build text: fazı göster
@@ -2741,7 +2951,7 @@
     function updateCamera(dt) {
       if (!player.mesh || !camera) return;
 
-      const camDist = 40;
+      const camDist = 32;
       const lerpFactor = 1 - Math.pow(1 - cameraFollowSmooth, dt * 60);
 
       const dirX = Math.sin(cameraYaw) * Math.cos(cameraPitch);
@@ -2749,7 +2959,7 @@
       const dirY = Math.sin(cameraPitch);
 
       const desiredX = player.x - dirX * camDist;
-      const desiredY = player.y + 3 + dirY * camDist;
+      const desiredY = player.y + 4 + dirY * camDist;
       const desiredZ = player.z - dirZ * camDist;
 
       camera.position.x += (desiredX - camera.position.x) * lerpFactor;
@@ -2765,7 +2975,7 @@
         cameraShake = Math.max(0, cameraShake - dt * 1.8);
       }
 
-      camera.lookAt(player.x, player.y + 1.8, player.z);
+      camera.lookAt(player.x, player.y + 1.6, player.z);
     }
 
     function updateUI() {
