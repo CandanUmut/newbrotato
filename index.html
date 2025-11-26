@@ -547,6 +547,7 @@
     let grassOffsets = [];
     let grassData = [];
     let pebbleInstanced = null;
+    let dirtRockMeshes = [];
     let weatherParticles = null;
     let weatherVelocities = null;
     let weatherMaterial = null;
@@ -1298,11 +1299,11 @@
       // Su rengi de daha belirgin, ama zemin maviye boğulmasın
       const waterGeo = new THREE.PlaneGeometry(WORLD_SIZE * 1.4, WORLD_SIZE * 1.4);
       waterMaterial = new THREE.MeshStandardMaterial({
-        color: 0x1d4ed8,
+        color: 0x4b341f,
         transparent: true,
-        opacity: 0.6,
-        metalness: 0.1,
-        roughness: 0.25,
+        opacity: 0.64,
+        metalness: 0.08,
+        roughness: 0.32,
       });
     
       const water = new THREE.Mesh(waterGeo, waterMaterial);
@@ -1313,6 +1314,7 @@
 
       scatterGrass();
       scatterPebbles();
+      scatterDirtRocks();
     }
 
     function scatterGrass() {
@@ -1387,6 +1389,69 @@
       pebbleInstanced.receiveShadow = true;
       pebbleInstanced.instanceMatrix.needsUpdate = true;
       scene.add(pebbleInstanced);
+    }
+
+    function createDirtRockGeometry(seedOffset = 0) {
+      const geo = new THREE.DodecahedronGeometry(0.34, 0);
+      const pos = geo.attributes.position;
+      const temp = new THREE.Vector3();
+      const noiseScale = 2.4;
+
+      for (let i = 0; i < pos.count; i++) {
+        temp.fromBufferAttribute(pos, i);
+        const n1 = Perlin.noise(temp.x * noiseScale + seedOffset, temp.z * noiseScale - seedOffset);
+        const n2 = Perlin.noise(temp.y * noiseScale - seedOffset, temp.x * noiseScale + seedOffset * 0.5);
+        const factor = 1 + (n1 * 0.35 + n2 * 0.2);
+        temp.multiplyScalar(factor);
+        pos.setXYZ(i, temp.x, temp.y, temp.z);
+      }
+
+      geo.attributes.position.needsUpdate = true;
+      geo.computeVertexNormals();
+      return geo;
+    }
+
+    function scatterDirtRocks() {
+      const count = 1700;
+      const variants = 3;
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0x6f4a2b,
+        roughness: 0.96,
+        metalness: 0.08,
+        flatShading: true,
+      });
+
+      const perVariant = Math.floor(count / variants);
+      dirtRockMeshes = [];
+
+      for (let v = 0; v < variants; v++) {
+        const geo = createDirtRockGeometry(20 + v * 1.8);
+        const variantCount = v === variants - 1 ? count - perVariant * (variants - 1) : perVariant;
+        const instanced = new THREE.InstancedMesh(geo, mat, variantCount);
+
+        for (let i = 0; i < variantCount; i++) {
+          const x = (Math.random() - 0.5) * (WORLD_SIZE - 8);
+          const z = (Math.random() - 0.5) * (WORLD_SIZE - 8);
+          const y = terrainHeight(x, z) + 0.05;
+
+          const s = 0.22 + Math.random() * 0.24;
+          dummy.position.set(x, y, z);
+          dummy.rotation.set(Math.random() * 0.18, Math.random() * Math.PI * 2, Math.random() * 0.18);
+          dummy.scale.set(
+            s * (0.8 + Math.random() * 0.4),
+            s * (0.7 + Math.random() * 0.45),
+            s * (0.85 + Math.random() * 0.35)
+          );
+          dummy.updateMatrix();
+          instanced.setMatrixAt(i, dummy.matrix);
+        }
+
+        instanced.castShadow = true;
+        instanced.receiveShadow = true;
+        instanced.instanceMatrix.needsUpdate = true;
+        scene.add(instanced);
+        dirtRockMeshes.push(instanced);
+      }
     }
 
 
@@ -1982,12 +2047,14 @@
     }
 
     function spawnXpOrb(x, z) {
-      const geo = new THREE.SphereGeometry(0.55, 12, 12);
+      const geo = new THREE.OctahedronGeometry(0.6, 0);
       const mat = new THREE.MeshStandardMaterial({
-        color: 0xa855f7,
-        emissive: 0x7c3aed,
-        emissiveIntensity: 1.1,
-        roughness: 0.28,
+        color: 0xf8d66d,
+        emissive: 0xf6c947,
+        emissiveIntensity: 1.05,
+        roughness: 0.22,
+        metalness: 0.4,
+        flatShading: true,
       });
       const mesh = new THREE.Mesh(geo, mat);
       const groundY = terrainHeight(x, z);
@@ -1998,7 +2065,7 @@
       xpOrbs.push({
         x,
         z,
-        radius: 0.6,
+        radius: 0.65,
         value: 1 + Math.random(),
         mesh,
       });
