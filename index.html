@@ -26,7 +26,7 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background: radial-gradient(circle at top, #0b1120 0, #020617 45%, #000 100%);
+      background: radial-gradient(circle at top, #3c1c0e 0, #1d0e08 45%, #0a0402 100%);
       color: var(--text);
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
@@ -67,6 +67,7 @@
       flex-wrap: wrap;
       pointer-events: none;
       font-size: 13px;
+      z-index: 5;
     }
 
     .hud-group {
@@ -98,6 +99,62 @@
       font-weight: 600;
     }
 
+    /* HUD bars */
+    #hud-bars {
+      position: absolute;
+      top: 52px;
+      left: 10px;
+      right: 10px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    .hud-bar {
+      min-width: 180px;
+      flex: 1;
+      max-width: 320px;
+    }
+
+    .hud-bar-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      color: var(--text-soft);
+      margin-bottom: 4px;
+    }
+
+    .hud-bar-track {
+      position: relative;
+      width: 100%;
+      height: 12px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.65);
+      border: 1px solid rgba(148, 163, 184, 0.45);
+      overflow: hidden;
+      box-shadow: 0 8px 18px rgba(0,0,0,0.45);
+    }
+
+    .hud-bar-fill {
+      position: absolute;
+      inset: 0;
+      width: 0%;
+      transition: width 0.18s ease-out;
+    }
+
+    #hp-bar-fill {
+      background: linear-gradient(90deg, #f97316, #ef4444);
+      box-shadow: 0 0 16px rgba(239, 68, 68, 0.65);
+    }
+
+    #xp-mini-fill {
+      background: linear-gradient(90deg, #38bdf8, #22c55e);
+      box-shadow: 0 0 16px rgba(56, 189, 248, 0.5);
+    }
+
     /* XP bar */
     #xp-wrapper {
       position: absolute;
@@ -110,6 +167,7 @@
       border: 1px solid rgba(148, 163, 184, 0.9);
       overflow: hidden;
       pointer-events: auto;
+      z-index: 5;
     }
 
     #xp-inner {
@@ -330,6 +388,7 @@
       height: 140px;
       pointer-events: none;
       touch-action: none;
+      z-index: 5;
     }
 
     #joystick-base {
@@ -455,6 +514,7 @@
       border: 1px solid rgba(239, 68, 68, 0.8);
       box-shadow: 0 12px 26px rgba(0, 0, 0, 0.55);
       pointer-events: none;
+      z-index: 4;
       opacity: 0;
       transition: opacity 0.18s ease-out;
     }
@@ -502,6 +562,25 @@
       #dodge-indicator { right: 18px; bottom: 18px; }
     }
 
+    @media (max-width: 900px) and (orientation: landscape), (max-height: 540px) and (orientation: landscape) {
+      #joystick-wrapper {
+        bottom: 18px;
+        right: 16px;
+        width: 120px;
+        height: 120px;
+      }
+
+      #joystick-base {
+        width: 112px;
+        height: 112px;
+      }
+
+      #joystick-knob {
+        width: 48px;
+        height: 48px;
+      }
+    }
+
     @media (prefers-reduced-motion: reduce) {
       * {
         transition: none !important;
@@ -539,6 +618,17 @@
           <span class="hud-label">BUILD</span>
           <span class="hud-value" id="hud-build">Mountains &amp; Forest</span>
         </div>
+      </div>
+    </div>
+
+    <div id="hud-bars">
+      <div class="hud-bar">
+        <div class="hud-bar-label"><span>Health</span><span id="hud-hp-label">100%</span></div>
+        <div class="hud-bar-track"><div class="hud-bar-fill" id="hp-bar-fill"></div></div>
+      </div>
+      <div class="hud-bar">
+        <div class="hud-bar-label"><span>XP</span><span id="hud-xp-label">0 / 10</span></div>
+        <div class="hud-bar-track"><div class="hud-bar-fill" id="xp-mini-fill"></div></div>
       </div>
     </div>
 
@@ -780,7 +870,13 @@
       dodgeBoost: 1.15,
       invuln: 0,
       magnetPull: 0,
-      burstTimer: 0
+      burstTimer: 0,
+      shootAnim: 0,
+      shootArm: "left",
+      armL: null,
+      armR: null,
+      gloveL: null,
+      gloveR: null
     };
 
     const enemies = [];
@@ -911,6 +1007,10 @@
 
     const xpFill = document.getElementById("xp-fill");
     const xpText = document.getElementById("xp-text");
+    const hpBarFill = document.getElementById("hp-bar-fill");
+    const xpMiniFill = document.getElementById("xp-mini-fill");
+    const hudHpLabel = document.getElementById("hud-hp-label");
+    const hudXpLabel = document.getElementById("hud-xp-label");
     const damageFlashEl = document.getElementById("damage-flash");
 
     const startScreen = document.getElementById("start-screen");
@@ -1285,13 +1385,13 @@
     // THREE INIT
     function initThree() {
       scene = new THREE.Scene();
-      // Gece koyu, gündüz gökyüzü daha açık mavi
-      scene.background = new THREE.Color(0x0b1628);
-      scene.fog = new THREE.FogExp2(0x0b1628, 0.0032); // daha az yoğun fog, yakın zemini aç
+      // Gece koyu, gündüz ise daha sıcak çöl tonları
+      scene.background = new THREE.Color(0x201006);
+      scene.fog = new THREE.FogExp2(0x5e3216, 0.00145); // daha sıcak ve daha az yoğun sis
 
-      dayColor = new THREE.Color(0xa7d8ff);  // açık gökyüzü
-      duskColor = new THREE.Color(0x172554);
-      nightColor = new THREE.Color(0x020617);
+      dayColor = new THREE.Color(0xf0c27b);  // açık çöl gökyüzü
+      duskColor = new THREE.Color(0x5a2c1a);
+      nightColor = new THREE.Color(0x140806);
 
 
       camera = new THREE.PerspectiveCamera(
@@ -1489,11 +1589,11 @@
         b *= checkerMul;
 
         // Genel olarak aydınlat: gece bile zemini net görelim
-        const warmNoise = (Perlin.noise(x * 0.04, z * 0.04) * 0.035);
-        const brighten = 1.2;
-        r = Math.min((r + warmNoise) * brighten + 0.035, 1.0);
-        g = Math.min((g + warmNoise * 0.45) * brighten + 0.03, 1.0);
-        b = Math.min((b + warmNoise * 0.28) * brighten + 0.025, 1.0);
+        const warmNoise = (Perlin.noise(x * 0.04, z * 0.04) * 0.05);
+        const brighten = 1.26;
+        r = Math.min((r + warmNoise * 1.1) * brighten + 0.05, 1.0);
+        g = Math.min((g + warmNoise * 0.55) * brighten + 0.04, 1.0);
+        b = Math.min((b + warmNoise * 0.2) * (brighten * 0.92) + 0.02, 1.0);
     
         colors[i * 3 + 0] = r;
         colors[i * 3 + 1] = g;
@@ -1506,9 +1606,9 @@
     
       groundMaterial = new THREE.MeshStandardMaterial({
         vertexColors: true,
-        color: 0x8b5a2b,
-        metalness: 0.0,
-        roughness: 0.98,
+        color: 0xc8873f,
+        metalness: 0.02,
+        roughness: 0.96,
         flatShading: true, // low-poly / minecraft hissi için daha net yüzeyler
         transparent: false,
         opacity: 1,
@@ -1522,9 +1622,9 @@
       // Arazinin hatlarını takip eden tel kafes grid
       const gridGeo = new THREE.WireframeGeometry(groundGeo);
       const gridMat = new THREE.LineBasicMaterial({
-        color: 0x4b3119,
+        color: 0x5f3515,
         transparent: true,
-        opacity: 0.16,
+        opacity: 0.18,
       });
       const groundGrid = new THREE.LineSegments(gridGeo, gridMat);
       groundGrid.rotation.x = -Math.PI / 2;
@@ -1536,11 +1636,11 @@
       // Su rengi de daha belirgin, ama zemin maviye boğulmasın
       const waterGeo = new THREE.PlaneGeometry(WORLD_SIZE * 1.4, WORLD_SIZE * 1.4);
       waterMaterial = new THREE.MeshStandardMaterial({
-        color: 0x2b4254,
+        color: 0xb9804d,
         transparent: true,
-        opacity: 0.6,
-        metalness: 0.15,
-        roughness: 0.4,
+        opacity: 0.32,
+        metalness: 0.08,
+        roughness: 0.45,
       });
 
       const water = new THREE.Mesh(waterGeo, waterMaterial);
@@ -1901,8 +2001,10 @@
       const armGeo = new THREE.CylinderGeometry(0.22, 0.24, 1.35, 10);
       const armL = new THREE.Mesh(armGeo, clothMat);
       armL.position.set(-1.05, 0.3, 0.05);
+      armL.rotation.set(-0.14, 0.12, 0.08);
       const armR = armL.clone();
       armR.position.x = 1.05;
+      armR.rotation.set(-0.14, -0.12, -0.08);
       armL.castShadow = true; armR.castShadow = true;
       group.add(armL, armR);
 
@@ -1915,6 +2017,11 @@
       gloveL.castShadow = true; gloveR.castShadow = true;
       gloveL.userData.pulse = gloveR.userData.pulse = true;
       group.add(gloveL, gloveR);
+
+      player.armL = armL;
+      player.armR = armR;
+      player.gloveL = gloveL;
+      player.gloveR = gloveR;
 
       // Baş + vizör
       const headGeo = new THREE.SphereGeometry(0.7, 18, 18);
@@ -2640,9 +2747,9 @@
       const radius = style.radius || (fromPlayer ? 0.28 * player.bulletScale : 0.22);
       const geo = new THREE.SphereGeometry(radius, 10, 10);
       const mat = new THREE.MeshStandardMaterial({
-        color: style.color || (fromPlayer ? 0xfacc15 : 0x6366f1),
-        emissive: style.emissive || (fromPlayer ? 0xfacc15 : 0x6366f1),
-        emissiveIntensity: style.emissiveIntensity || 1,
+        color: style.color || (fromPlayer ? 0xffa638 : 0x6366f1),
+        emissive: style.emissive || (fromPlayer ? 0xff6b00 : 0x6366f1),
+        emissiveIntensity: style.emissiveIntensity || 1.15,
         roughness: 0.3,
         metalness: 0.3,
       });
@@ -2958,18 +3065,52 @@
 
       player.y = groundY + player.jumpOffset;
 
+      player.shootAnim = Math.max(0, player.shootAnim - dt * 2.8);
+
       if (player.mesh) {
         player.mesh.position.set(player.x, player.y, player.z);
         // Hafif nefes / enerji titreşimi
         const t = elapsedTime;
         const scalePulse = 1 + Math.sin(t * 4) * 0.05;
+
+        // Ateş animasyonu: kollar ileri uzanıp eldiven parlıyor
+        if (player.armL && player.armR) {
+          const baseL = { x: -1.05, y: 0.3, z: 0.05 };
+          const baseR = { x: 1.05, y: 0.3, z: 0.05 };
+
+          if (player.shootAnim > 0) {
+            const shootProgress = 1 - player.shootAnim / 0.45;
+            const swing = Math.sin(shootProgress * Math.PI);
+            const leftActive = player.shootArm === "left";
+
+            const leftLift = swing * (leftActive ? 1 : 0.55);
+            const rightLift = swing * (!leftActive ? 1 : 0.55);
+
+            player.armL.position.set(baseL.x, baseL.y + leftLift * 0.32, baseL.z + leftLift * 0.55);
+            player.armR.position.set(baseR.x, baseR.y + rightLift * 0.32, baseR.z + rightLift * 0.55);
+            player.armL.rotation.x = -0.14 - leftLift * 0.9;
+            player.armR.rotation.x = -0.14 - rightLift * 0.9;
+
+            if (player.gloveL) player.gloveL.userData.extraScale = (leftActive ? 1.18 : 1.02) * (1 + swing * 0.25);
+            if (player.gloveR) player.gloveR.userData.extraScale = (!leftActive ? 1.18 : 1.02) * (1 + swing * 0.25);
+          } else {
+            player.armL.position.set(baseL.x, baseL.y, baseL.z);
+            player.armR.position.set(baseR.x, baseR.y, baseR.z);
+            player.armL.rotation.set(-0.14, 0.12, 0.08);
+            player.armR.rotation.set(-0.14, -0.12, -0.08);
+            if (player.gloveL) player.gloveL.userData.extraScale = 1;
+            if (player.gloveR) player.gloveR.userData.extraScale = 1;
+          }
+        }
+
         player.mesh.children.forEach(child => {
           if (
             child.userData.pulse ||
             child.geometry instanceof THREE.SphereGeometry ||
             child.geometry instanceof THREE.CapsuleGeometry
           ) {
-            child.scale.set(scalePulse, scalePulse, scalePulse);
+            const extra = child.userData.extraScale || 1;
+            child.scale.set(scalePulse * extra, scalePulse * extra, scalePulse * extra);
           }
         });
       }
@@ -3348,7 +3489,16 @@
       }
     }
 
+    function triggerShootAnimation() {
+      player.shootAnim = 0.45;
+      player.shootArm = player.shootArm === "left" ? "right" : "left";
+      const leftActive = player.shootArm === "left";
+      if (player.gloveL) player.gloveL.userData.extraScale = leftActive ? 1.25 : 1.05;
+      if (player.gloveR) player.gloveR.userData.extraScale = !leftActive ? 1.25 : 1.05;
+    }
+
     function fireWeapon(type, dirX, dirZ) {
+      triggerShootAnimation();
       if (type === "scatter") {
         const pellets = 7;
         for (let i = 0; i < pellets; i++) {
@@ -3711,6 +3861,10 @@
       hudKills.textContent = killCount;
       hudTime.textContent = formatTime(elapsedTime);
 
+      const hpRatio = clamp(player.hp / player.maxHp, 0, 1);
+      if (hpBarFill) hpBarFill.style.width = `${hpRatio * 100}%`;
+      if (hudHpLabel) hudHpLabel.textContent = `${Math.round(hpRatio * 100)}%`;
+
       let stage = "Mountains & Forest";
       if (level >= 4) stage = "Emerald Ridges";
       if (level >= 8) stage = "Dirt Barrens";
@@ -3721,6 +3875,8 @@
       const ratio = clamp(xp / xpNeeded, 0, 1);
       xpFill.style.width = `${ratio * 100}%`;
       xpText.textContent = `XP ${Math.floor(xp)} / ${xpNeeded}`;
+      if (xpMiniFill) xpMiniFill.style.width = `${ratio * 100}%`;
+      if (hudXpLabel) hudXpLabel.textContent = `${Math.floor(xp)} / ${xpNeeded}`;
 
       if (dodgeIndicator) {
         const fill = player.dodgeCooldownMax > 0 ? 1 - (player.dodgeCooldown / player.dodgeCooldownMax) : 1;
