@@ -775,12 +775,15 @@
     let sunMesh, moonMesh;
     let groundMaterial = null;
     let waterMaterial = null;
+    let waterMesh = null;
+    let waterBasePositions = null;
     let grassInstanced = null;
     let grassOffsets = [];
     let grassData = [];
     let flowerInstanced = null;
     let flowerOffsets = [];
     let flowerData = [];
+    let flowerBloomInstanced = null;
     let waterPlantInstanced = null;
     let waterPlantOffsets = [];
     let waterPlantData = [];
@@ -1713,20 +1716,22 @@
 
       // === SU YÜZEYİ ===
       // Su rengi de daha belirgin, ama zemin maviye boğulmasın
-      const waterGeo = new THREE.PlaneGeometry(WORLD_SIZE * 1.4, WORLD_SIZE * 1.4);
+      const waterGeo = new THREE.PlaneGeometry(WORLD_SIZE * 1.4, WORLD_SIZE * 1.4, 120, 120);
       waterMaterial = new THREE.MeshStandardMaterial({
-        color: 0x2b6cb0,
+        color: 0x8ad9ff,
         transparent: true,
-        opacity: 0.68,
-        metalness: 0.12,
-        roughness: 0.28,
+        opacity: 0.62,
+        metalness: 0.18,
+        roughness: 0.22,
+        fog: false,
       });
 
-      const water = new THREE.Mesh(waterGeo, waterMaterial);
-      water.rotation.x = -Math.PI / 2;
-      water.position.y = WATER_LEVEL;
-      water.receiveShadow = false;
-      scene.add(water);
+      waterMesh = new THREE.Mesh(waterGeo, waterMaterial);
+      waterMesh.rotation.x = -Math.PI / 2;
+      waterMesh.position.y = WATER_LEVEL;
+      waterMesh.receiveShadow = false;
+      waterBasePositions = waterGeo.attributes.position.array.slice(0);
+      scene.add(waterMesh);
 
       scatterWaterPlants();
       scatterGrass();
@@ -1783,7 +1788,7 @@
     }
 
     function scatterGrass() {
-      const count = 5200;
+      const count = 10400;
       const geo = new THREE.ConeGeometry(0.16, 0.95, 6);
       geo.translate(0, 0.45, 0);
       const mat = new THREE.MeshStandardMaterial({
@@ -1826,20 +1831,33 @@
     }
 
     function scatterFlowers() {
-      const count = 900;
-      const geo = new THREE.CylinderGeometry(0.06, 0.08, 0.36, 8);
-      geo.translate(0, 0.18, 0);
-      const mat = new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        emissive: 0x000000,
-        emissiveIntensity: 0.0,
-        roughness: 0.62,
-        metalness: 0.08,
+      const count = 1800;
+      const stemGeo = new THREE.CylinderGeometry(0.05, 0.08, 0.42, 10);
+      stemGeo.translate(0, 0.21, 0);
+      const stemMat = new THREE.MeshStandardMaterial({
+        color: 0x2f9e44,
+        emissive: 0x0f5f36,
+        emissiveIntensity: 0.4,
+        roughness: 0.72,
+        metalness: 0.12,
         flatShading: true,
       });
 
-      const petals = [0xf43f5e, 0xfda4af, 0xfff1a1, 0xf97316, 0x7dd3fc];
-      flowerInstanced = new THREE.InstancedMesh(geo, mat, count);
+      const bloomGeo = new THREE.ConeGeometry(0.22, 0.28, 10);
+      bloomGeo.translate(0, 0.56, 0);
+      const bloomMat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        emissive: 0x241010,
+        emissiveIntensity: 0.25,
+        roughness: 0.45,
+        metalness: 0.12,
+        flatShading: true,
+        vertexColors: true,
+      });
+
+      const petals = [0xf43f5e, 0xfda4af, 0xfff1a1, 0xf97316, 0x7dd3fc, 0xc084fc];
+      flowerInstanced = new THREE.InstancedMesh(stemGeo, stemMat, count);
+      flowerBloomInstanced = new THREE.InstancedMesh(bloomGeo, bloomMat, count);
       flowerOffsets = new Array(count);
       flowerData = new Array(count);
 
@@ -1858,17 +1876,28 @@
         dummy.scale.setScalar(s);
         dummy.updateMatrix();
         flowerInstanced.setMatrixAt(i, dummy.matrix);
-        flowerInstanced.setColorAt(i, new THREE.Color(petals[(Math.random() * petals.length) | 0]));
+
+        dummy.position.set(x, y + 0.26 * s, z);
+        dummy.rotation.set(-0.06, rot + 0.2, 0);
+        dummy.scale.setScalar(s * 0.9);
+        dummy.updateMatrix();
+        flowerBloomInstanced.setMatrixAt(i, dummy.matrix);
+        flowerBloomInstanced.setColorAt(i, new THREE.Color(petals[(Math.random() * petals.length) | 0]));
 
         flowerOffsets[i] = Math.random() * Math.PI * 2;
         flowerData[i] = { x, y, z, scale: s, rot };
       }
 
       flowerInstanced.instanceMatrix.needsUpdate = true;
-      if (flowerInstanced.instanceColor) flowerInstanced.instanceColor.needsUpdate = true;
       flowerInstanced.castShadow = false;
       flowerInstanced.receiveShadow = true;
       scene.add(flowerInstanced);
+
+      flowerBloomInstanced.instanceMatrix.needsUpdate = true;
+      if (flowerBloomInstanced.instanceColor) flowerBloomInstanced.instanceColor.needsUpdate = true;
+      flowerBloomInstanced.castShadow = false;
+      flowerBloomInstanced.receiveShadow = true;
+      scene.add(flowerBloomInstanced);
     }
 
     function scatterPebbles() {
@@ -2981,19 +3010,19 @@
         ? new THREE.IcosahedronGeometry(radius, 1)
         : new THREE.SphereGeometry(radius, 12, 12);
       const mat = new THREE.MeshStandardMaterial({
-        color: style.color || (fromPlayer ? 0xffc241 : 0xff4d6d),
-        emissive: style.emissive || (fromPlayer ? 0xff8b3d : 0xff7b6f),
-        emissiveIntensity: style.emissiveIntensity || (fromPlayer ? 1.45 : 1.7),
-        roughness: fromPlayer ? 0.28 : 0.18,
-        metalness: fromPlayer ? 0.28 : 0.52,
+        color: style.color || (fromPlayer ? 0xffc241 : 0x7c3aed),
+        emissive: style.emissive || (fromPlayer ? 0xff8b3d : 0x4c1d95),
+        emissiveIntensity: style.emissiveIntensity || (fromPlayer ? 1.45 : 1.85),
+        roughness: fromPlayer ? 0.28 : 0.16,
+        metalness: fromPlayer ? 0.28 : 0.55,
         transparent: isEnemyBullet,
-        opacity: isEnemyBullet ? 0.96 : 1,
+        opacity: isEnemyBullet ? 0.94 : 1,
       });
       const mesh = new THREE.Mesh(geo, mat);
       if (isEnemyBullet && !style.disableGlow) {
         const glow = new THREE.Mesh(
           new THREE.SphereGeometry(radius * 1.5, 8, 8),
-          new THREE.MeshBasicMaterial({ color: 0xffe7c5, transparent: true, opacity: 0.32 })
+          new THREE.MeshBasicMaterial({ color: 0xc084fc, transparent: true, opacity: 0.36 })
         );
         mesh.add(glow);
       }
@@ -3809,11 +3838,12 @@
 
         const pullRadius = player.pickupRadius + player.magnetPull;
         if (orb.magnet || dist < pullRadius) {
-          const pull = orb.magnet ? 32 : 12;
+          const closeBoost = dist < pullRadius * 0.45 ? 1.4 : 1;
+          const pull = orb.magnet ? 38 : 12 * closeBoost;
           const n = normalize2(dx, dz);
-          orb.vx = (orb.vx || 0) * 0.85 + n.x * pull * dt;
-          orb.vz = (orb.vz || 0) * 0.85 + n.z * pull * dt;
-          const speedMul = orb.magnet ? 2 : 1;
+          orb.vx = (orb.vx || 0) * 0.82 + n.x * pull * dt * (1 + (1 - clamp(dist / pullRadius, 0, 1)) * 0.35);
+          orb.vz = (orb.vz || 0) * 0.82 + n.z * pull * dt * (1 + (1 - clamp(dist / pullRadius, 0, 1)) * 0.35);
+          const speedMul = orb.magnet ? 2.2 : closeBoost > 1 ? 1.35 : 1;
           orb.x += orb.vx * dt * speedMul;
           orb.z += orb.vz * dt * speedMul;
         } else if (player.magnetPull > 0 && dist < pullRadius * 1.8) {
@@ -4505,9 +4535,23 @@
       }
 
       // Suyun hafif dalgalanması
-      if (waterMaterial) {
-        const wave = 0.02 * Math.sin(windTime * 0.9);
-        waterMaterial.normalScale = new THREE.Vector2(1 + wave, 1 + wave);
+      if (waterMesh && waterMaterial && waterBasePositions) {
+        const pos = waterMesh.geometry.attributes.position;
+        const time = windTime;
+        for (let i = 0; i < pos.count; i++) {
+          const ix = i * 3;
+          const baseX = waterBasePositions[ix];
+          const baseY = waterBasePositions[ix + 1];
+          const baseZ = waterBasePositions[ix + 2];
+          const waveA = Math.sin(baseX * 0.08 + time * 1.1);
+          const waveB = Math.cos(baseZ * 0.06 + time * 0.9);
+          pos.array[ix + 1] = baseY + (waveA + waveB) * 0.18;
+        }
+        pos.needsUpdate = true;
+        waterMesh.geometry.computeVertexNormals();
+
+        const wave = 0.04 * Math.sin(windTime * 0.8);
+        waterMaterial.normalScale = new THREE.Vector2(1.1 + wave, 1.1 - wave * 0.6);
       }
 
       if (grassInstanced && grassData.length) {
@@ -4534,6 +4578,20 @@
           flowerInstanced.setMatrixAt(i, dummy.matrix);
         }
         flowerInstanced.instanceMatrix.needsUpdate = true;
+      }
+
+      if (flowerBloomInstanced && flowerData.length) {
+        for (let i = 0; i < flowerData.length; i++) {
+          const g = flowerData[i];
+          const sway = Math.sin(windTime * 1.8 + flowerOffsets[i]) * 0.22;
+          dummy.position.set(g.x, g.y + 0.26 * g.scale, g.z);
+          dummy.rotation.set(-0.05 + sway * 0.12, g.rot + sway * 0.15, sway * 0.25);
+          dummy.scale.setScalar(g.scale * 0.9);
+          dummy.updateMatrix();
+          flowerBloomInstanced.setMatrixAt(i, dummy.matrix);
+        }
+        flowerBloomInstanced.instanceMatrix.needsUpdate = true;
+        if (flowerBloomInstanced.instanceColor) flowerBloomInstanced.instanceColor.needsUpdate = true;
       }
 
       if (waterPlantInstanced && waterPlantData.length) {
