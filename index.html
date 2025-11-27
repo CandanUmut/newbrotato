@@ -26,7 +26,7 @@
       width: 100%;
       height: 100%;
       overflow: hidden;
-      background: radial-gradient(circle at 20% 18%, #c2703a 0, #5a321b 46%, #120807 100%);
+      background: radial-gradient(circle at 24% 16%, #0f172a 0, #0b1224 38%, #030712 100%);
       color: var(--text);
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
@@ -748,6 +748,10 @@
     const WATER_LEVEL = -7;
     const BIOME_SCALE = 0.0055;
     const BOSS_INTERVAL = 60;
+    const MAX_ENEMIES = 140;
+    const RESCUE_COOLDOWN = 1.2;
+    const DASH_DURATION = 0.32;
+    const DASH_SPEED_MULT = 3.6;
 
     let scene, camera, renderer;
     let lastTime = performance.now();
@@ -878,6 +882,8 @@
       invuln: 0,
       magnetPull: 0,
       burstTimer: 0,
+      dashTimer: 0,
+      dashDir: { x: 0, z: 1 },
       shootAnim: 0,
       shootArm: "left",
       armL: null,
@@ -914,6 +920,7 @@
     let autoDodgeTimer = 0;
     const RESCUE_MAX = 100;
     let rescueCharge = 0;
+    let rescueCooldown = 0;
 
     // Özel yetenekler
     let novaInterval = 0;
@@ -935,7 +942,7 @@
 
       if (!masterGain) {
         masterGain = audioCtx.createGain();
-        masterGain.gain.value = 0.9;
+        masterGain.gain.value = 0.65;
         masterGain.connect(audioCtx.destination);
       }
 
@@ -953,45 +960,52 @@
       freqEnd = 440,
       duration = 0.18,
       volume = 0.3,
-      type = "sine"
+      type = "sine",
+      color = 2600
     }) {
       if (!audioCtx && soundEnabled) initAudio();
       if (!audioCtx || !soundEnabled) return;
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
+      const filter = audioCtx.createBiquadFilter();
       const now = audioCtx.currentTime;
 
       osc.type = type;
-      osc.frequency.setValueAtTime(freqStart, now);
-      osc.frequency.linearRampToValueAtTime(freqEnd, now + duration * 0.9);
+      const jitter = 1 + (Math.random() - 0.5) * 0.06;
+      osc.frequency.setValueAtTime(freqStart * jitter, now);
+      osc.frequency.linearRampToValueAtTime(freqEnd * jitter, now + duration * 0.9);
+
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(color, now);
 
       gain.gain.setValueAtTime(volume, now);
       gain.gain.linearRampToValueAtTime(0.0001, now + duration);
 
-      osc.connect(gain);
+      osc.connect(filter);
+      filter.connect(gain);
       gain.connect(masterGain || audioCtx.destination);
       osc.start(now);
       osc.stop(now + duration + 0.02);
     }
 
     function sShoot() {
-      playSound({ freqStart: 520, freqEnd: 360, duration: 0.11, volume: 0.22, type: "triangle" });
+      playSound({ freqStart: 520, freqEnd: 360, duration: 0.11, volume: 0.16, type: "triangle", color: 1800 });
     }
     function sHit() {
-      playSound({ freqStart: 260, freqEnd: 140, duration: 0.16, volume: 0.3, type: "sine" });
+      playSound({ freqStart: 260, freqEnd: 140, duration: 0.18, volume: 0.22, type: "sine", color: 1200 });
     }
     function sPickup() {
-      playSound({ freqStart: 700, freqEnd: 980, duration: 0.18, volume: 0.24, type: "triangle" });
+      playSound({ freqStart: 700, freqEnd: 980, duration: 0.18, volume: 0.18, type: "triangle", color: 2100 });
     }
     function sLevel() {
-      playSound({ freqStart: 600, freqEnd: 900, duration: 0.2, volume: 0.3, type: "sine" });
-      setTimeout(() => playSound({ freqStart: 900, freqEnd: 1200, duration: 0.2, volume: 0.28, type: "triangle" }), 120);
+      playSound({ freqStart: 600, freqEnd: 900, duration: 0.2, volume: 0.22, type: "sine", color: 1900 });
+      setTimeout(() => playSound({ freqStart: 900, freqEnd: 1200, duration: 0.2, volume: 0.18, type: "triangle", color: 1600 }), 120);
     }
     function sJump() {
-      playSound({ freqStart: 380, freqEnd: 640, duration: 0.18, volume: 0.26, type: "triangle" });
+      playSound({ freqStart: 380, freqEnd: 640, duration: 0.16, volume: 0.2, type: "triangle", color: 1500 });
     }
     function sHeal() {
-      playSound({ freqStart: 420, freqEnd: 760, duration: 0.22, volume: 0.28, type: "sine" });
+      playSound({ freqStart: 420, freqEnd: 760, duration: 0.22, volume: 0.2, type: "sine", color: 1400 });
     }
 
     function triggerDamageFlash(intensity = 1) {
@@ -1420,6 +1434,8 @@
       renderer.setPixelRatio(window.devicePixelRatio || 1);
       renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.outputEncoding = THREE.sRGBEncoding;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.1;
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       document.getElementById("game-root").appendChild(renderer.domElement);
@@ -2603,6 +2619,8 @@
       player.invuln = 0;
       player.magnetPull = 0;
       player.burstTimer = 0;
+      player.dashTimer = 0;
+      player.dashDir = { x: 0, z: 1 };
       autoDodgeTimer = player.dodgeCooldownMax;
       tutorialTimer = 12;
       showTutorial = true;
@@ -2638,6 +2656,7 @@
       novaInterval = 0;
       novaTimer = 0;
       rescueCharge = 0;
+      rescueCooldown = 0;
 
       hudBuild.textContent = "Mountains & Forest";
     }
@@ -2679,6 +2698,7 @@
     }
 
     function spawnEnemy() {
+      if (enemies.length >= MAX_ENEMIES) return;
       const angle = Math.random() * Math.PI * 2;
       const dist = 40 + Math.random() * 65;
       let x = player.x + Math.cos(angle) * dist;
@@ -2746,7 +2766,8 @@
         slowFactor: 1,
         behavior: variant.behavior,
         specialTimer: 0.6 + Math.random() * 1.2,
-        isBoss: false
+        isBoss: false,
+        contactTimer: 0
       });
     }
 
@@ -2789,7 +2810,8 @@
         behavior: variant.behavior,
         specialTimer: 3 + Math.random() * 2,
         isBoss: true,
-        bossVariant: variant
+        bossVariant: variant,
+        contactTimer: 0
       };
 
       enemies.push(boss);
@@ -3020,6 +3042,17 @@
       effects.push({ mesh: ring, life: 0.5, maxLife: 0.5, type: "rescue" });
     }
 
+    function spawnDashTrail(dir) {
+      const geo = new THREE.CylinderGeometry(0.18, 0.85, 3.6, 8, 1, true);
+      const mat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.6, side: THREE.DoubleSide });
+      const trail = new THREE.Mesh(geo, mat);
+      trail.rotation.z = Math.PI / 2;
+      trail.rotation.y = Math.atan2(dir.x, dir.z);
+      trail.position.set(player.x, terrainHeight(player.x, player.z) + 1.1, player.z);
+      scene.add(trail);
+      effects.push({ mesh: trail, life: 0.32, maxLife: 0.32, type: "dash" });
+    }
+
     function spawnMuzzleFlash(origin, dir) {
       const geo = new THREE.ConeGeometry(0.42, 1.4, 12, 1);
       geo.translate(0, 0.7, 0);
@@ -3077,6 +3110,10 @@
       autoDodgeTimer = player.dodgeCooldownMax;
       player.invuln = 0.75;
       player.burstTimer = 0.5;
+      const facing = player.mesh ? player.mesh.rotation.y : 0;
+      player.dashDir = { x: Math.sin(facing), z: Math.cos(facing) };
+      player.dashTimer = DASH_DURATION;
+      spawnDashTrail(player.dashDir);
       cameraShake = Math.max(cameraShake, 0.15);
       sJump();
     }
@@ -3161,6 +3198,18 @@
         if (player.mesh) player.mesh.rotation.y = angle;
       }
 
+      if (player.dashTimer > 0) {
+        const dashSpeed = player.speed * DASH_SPEED_MULT;
+        let dashX = player.x + player.dashDir.x * dashSpeed * dt;
+        let dashZ = player.z + player.dashDir.z * dashSpeed * dt;
+        dashX = clamp(dashX, -WORLD_SIZE / 2 + 3, WORLD_SIZE / 2 - 3);
+        dashZ = clamp(dashZ, -WORLD_SIZE / 2 + 3, WORLD_SIZE / 2 - 3);
+        const dashPos = applyObstacleCollision({ x: dashX, z: dashZ });
+        player.x = dashPos.x;
+        player.z = dashPos.z;
+        player.dashTimer = Math.max(0, player.dashTimer - dt);
+      }
+
       const groundY = terrainHeight(player.x, player.z) + 2.2;
       player.vy -= 36 * dt;
       player.jumpOffset += player.vy * dt;
@@ -3239,8 +3288,11 @@
 
 
     function updateEnemies(dt) {
+      rescueCooldown = Math.max(0, rescueCooldown - dt);
       for (let i = enemies.length - 1; i >= 0; i--) {
         const e = enemies[i];
+
+        e.contactTimer = Math.max(0, (e.contactTimer || 0) - dt);
 
         if (e.isBoss) activeBoss = e;
 
@@ -3427,12 +3479,14 @@
         e.mesh.position.set(e.x, baseY, e.z);
 
         const dPlayer = Math.hypot(player.x - e.x, player.z - e.z);
-        if (dPlayer < player.radius + e.radius - 0.2) {
-          triggerRescuePulse();
+        if (dPlayer < player.radius + e.radius - 0.2 && rescueCooldown <= 0) {
+          if (triggerRescuePulse()) rescueCooldown = RESCUE_COOLDOWN;
         }
-        if (dPlayer < player.radius + e.radius) {
+        if (dPlayer < player.radius + e.radius && e.contactTimer <= 0) {
           const shake = e.isBoss ? 0.2 : 0.1;
-          applyPlayerDamage(e.damage * dt, shake, "contact");
+          const burst = e.isBoss ? 0.9 : 0.7;
+          applyPlayerDamage(e.damage * burst, shake, "contact");
+          e.contactTimer = e.isBoss ? 0.6 : 0.45;
         }
       }
     }
@@ -4212,6 +4266,10 @@
           const s = 0.9 + t * 2.2;
           eff.mesh.scale.set(s, s, s);
           eff.mesh.material.opacity = 0.85 * (1 - t);
+        } else if (eff.type === "dash") {
+          const s = 1 + t * 0.6;
+          eff.mesh.scale.set(s, s, s);
+          eff.mesh.material.opacity = 0.6 * (1 - t);
         } else if (eff.type === "muzzle") {
           const s = 1 + t * 1.6;
           eff.mesh.scale.set(1, s, 1);
@@ -4390,11 +4448,15 @@
 
         spawnTimer -= dt;
         if (spawnTimer <= 0) {
-          const difficulty = difficultyMultiplier();
-          const wave = 1 + Math.floor(Math.max(0, (difficulty - 2.0) * 0.28));
-          for (let n = 0; n < wave; n++) spawnEnemy();
-          const spawnInterval = Math.max(0.35, 1.25 / (1.1 + difficulty * 0.28));
-          spawnTimer = spawnInterval;
+          if (enemies.length < MAX_ENEMIES) {
+            const difficulty = difficultyMultiplier();
+            const wave = 1 + Math.floor(Math.max(0, (difficulty - 2.0) * 0.28));
+            for (let n = 0; n < wave; n++) spawnEnemy();
+            const spawnInterval = Math.max(0.35, 1.25 / (1.1 + difficulty * 0.28));
+            spawnTimer = spawnInterval;
+          } else {
+            spawnTimer = 0.6;
+          }
         }
 
         bossTimer -= dt;
